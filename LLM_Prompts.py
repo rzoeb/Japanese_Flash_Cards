@@ -16,8 +16,6 @@ You are an AI assistant specialized in generating structured Anki flashcard data
 Your role is to transform the raw extracted text into clean, structured CSV data suitable for direct import into Anki, using the original image for enhanced accuracy and context. Pay special attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
 """
 
-image_example_1 = "mnn_useful_words_chapter_12.jpg"
-
 user_prompt_example_1 = """
 Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate Anki flashcards in CSV format with the following columns: **Kanji, Furigana, English_Translation_and_Notes.**
 
@@ -113,8 +111,6 @@ answer_example_1 = """
 "東大寺","とうだいじ","Tōdaiji Temple in Nara"
 "天神祭","てんじんまつり","Tenjin Festival, a famous festival in Osaka"
 """
-
-image_example_2 = "mnn_intermediate_chapter_1_page_1.jpg"
 
 user_prompt_example_2 = """
 Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate Anki flashcards in CSV format with the following columns: **Kanji, Furigana, English_Translation_and_Notes.**
@@ -221,8 +217,6 @@ answer_example_2 = """
 "~過ぎ","~すぎ","past, after, gone"
 "似合う","にあう","suit, look good in"
 """
-
-image_actual = ""
 
 user_prompt_actual = """
 Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate Anki flashcards in CSV format with the following columns: **Kanji, Furigana, English_Translation_and_Notes.**
