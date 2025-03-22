@@ -1,4 +1,36 @@
-system_prompt = """
+suitability_system_prompt = """
+You are an AI assistant specialized in evaluating images to determine if they are suitable for generating Japanese language flashcards. You need to assess if the image contains characteristics that make it a good source for vocabulary and phrase extraction for language learning.
+
+## Evaluation Criteria:
+- **Presence of Japanese Text:** The image must contain Japanese text (Kanji, Hiragana, Katakana).
+- **Presence of English Text (Optional but Recommended):**  Ideally, the image should also contain English text (translations, notes, explanations) to facilitate flashcard creation.
+- **Clarity and Readability:** The text in the image should be clear, legible, and not overly distorted or low-resolution.
+
+## Output Format:
+You must strictly output your answer in JSON format according to the following schema:
+
+{
+  "is_suitable": "Yes" or "No",
+  "reason": "A brief explanation for your decision (max 1-2 sentences)"
+}
+
+**Do not output any text outside of the JSON structure.**
+"""
+
+suitability_user_prompt = """
+Assess the attached image and determine if it is suitable for generating Japanese/English flashcards based on the criteria provided in the system prompt. Consider the presence of Japanese and English text, and the text clarity.
+
+Based on your assessment, provide your answer in JSON format as specified in the system prompt:
+
+{
+  "is_suitable": "Yes" or "No",
+  "reason": "A brief explanation for your decision (max 1-2 sentences)"
+}
+
+Now, analyze the attached image and provide your JSON response.
+"""
+
+flashcard_system_prompt = """
 You are an AI assistant specialized in generating structured Anki flashcard data from Japanese language material. You are provided with both raw extracted text and an original image of a Japanese textbook page. Your task is to cross-reference the extracted text with the original image to correct any errors, fill in missing details, and ensure contextually accurate information.
 
 ## Strictly follow these rules:
@@ -16,7 +48,7 @@ You are an AI assistant specialized in generating structured Anki flashcard data
 Your role is to transform the raw extracted text into clean, structured CSV data suitable for direct import into Anki, using the original image for enhanced accuracy and context. Pay special attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
 """
 
-user_prompt_example_1 = """
+flashcard_user_prompt_example_1 = """
 Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate Anki flashcards in CSV format with the following columns: **Kanji, Furigana, English_Translation_and_Notes.**
 
 ## Instructions:
@@ -87,7 +119,7 @@ III. Useful Words and
 ---EXTRACTED TEXT ENDS HERE---
 """
 
-answer_example_1 = """
+flashcard_answer_example_1 = """
 "祭りと名所","まつりとめいしょ","Festivals and Places of Note"
 "祭り","まつり","festival"
 "名所","めいしょ","place of note; famous place"
@@ -112,7 +144,7 @@ answer_example_1 = """
 "天神祭","てんじんまつり","Tenjin Festival, a famous festival in Osaka"
 """
 
-user_prompt_example_2 = """
+flashcard_user_prompt_example_2 = """
 Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate Anki flashcards in CSV format with the following columns: **Kanji, Furigana, English_Translation_and_Notes.**
 
 ## Instructions:
@@ -191,7 +223,7 @@ Now process the extracted text (between the demarcation markers) and the origina
 ---EXTRACTED TEXT ENDS HERE---
 """
 
-answer_example_2 = """
+flashcard_answer_example_2 = """
 "どのように","どのように","how"
 "迷う [道に～]","まよう [みちに～]","lose [one's way]"
 "先輩","せんぱい","senior (student, colleague, etc.)"
@@ -218,7 +250,7 @@ answer_example_2 = """
 "似合う","にあう","suit, look good in"
 """
 
-user_prompt_actual = """
+flashcard_user_prompt_actual = """
 Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate Anki flashcards in CSV format with the following columns: **Kanji, Furigana, English_Translation_and_Notes.**
 
 ## Instructions:
