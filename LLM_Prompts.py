@@ -14,7 +14,7 @@ You must strictly output your answer in JSON format according to the following s
   "reason": "A brief explanation for your decision (max 1-2 sentences)"
 }
 
-**Do not output any text outside of the JSON structure.**
+**Do not output any text outside of the JSON structure. Do not wrap the JSON output in backticks or code blocks.**
 """
 
 suitability_user_prompt = """
@@ -27,7 +27,7 @@ Based on your assessment, provide your answer in JSON format as specified in the
   "reason": "A brief explanation for your decision (max 1-2 sentences)"
 }
 
-Now, analyze the attached image and provide your JSON response.
+Now, analyze the attached image and provide your JSON response. Do not wrap the JSON output in backticks or code blocks.
 """
 
 flashcard_system_prompt = """
