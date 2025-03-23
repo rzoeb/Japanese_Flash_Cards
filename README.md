@@ -98,7 +98,7 @@ The application requires the following Python packages:
 - `google-generativeai` - To interact with Google's Gemini API
 - `Pillow` - For image processing
 - `python-dotenv` - For loading environment variables
-- `unstract-llmwhisperer` - For OCR capabilities via the LLMWhisperer API
+- `llmwhisperer-client` - For OCR capabilities via the LLMWhisperer API
 
 All dependencies are listed in the requirements.txt file.
 
