@@ -197,7 +197,8 @@ def generate_japanese_flashcards(
             continue
 
         # If we made it here, flashcards were generated successfully
-        combined_flashcards += f"\n---\nFlashcards for Image #{idx}:\n{flashcards_text}\n---\n"
+        # combined_flashcards += f"\n---\nFlashcards for Image #{idx}:\n{flashcards_text}\n---\n"
+        combined_flashcards += flashcards_text
         image_processing_notes.append(f"Image #{idx}: Flashcards generated successfully.")
 
     # Return both the flashcards and the notes
@@ -216,9 +217,66 @@ def main():
     # Displaying the title for the app
     st.title("AI Japanese Flashcard Generator")
 
-    # Displaying a banner or logo image
-    # Replace with a valid path or remove if not needed
-    st.image("path/to/your_app_banner_image.jpg", use_column_width=True)
+     # Displaying a banner or logo image with border
+    try:
+        # Load the image
+        img = PIL.Image.open("Flashcard_App_Image_2.jpeg")
+        
+        # Add a light black border (3px width)
+        bordered_img = PIL.ImageOps.expand(img, border=5, fill='#333333')
+        
+        # Display the image with border
+        st.image(bordered_img, use_container_width=True)
+    except Exception as e:
+        # Fallback to display without border if there's an error
+        st.image("Flashcard_App_Image_2.jpeg", use_container_width=True)
+
+    # Displaying a short description of the app
+    st.markdown("""
+    ### Japanese Language Flashcard Generation
+
+    #### Overview
+    This App automates the creation of Japanese Language Anki flashcards from textbook images. It combines OCR technology with large language model processing to extract, verify, and format vocabulary into ready-to-import flashcards.
+
+    #### Features
+    - Extract Japanese text from textbook images using OCR API
+    - Cross-reference extracted text with original images for accuracy
+    - Generate structured CSV flashcards with proper formatting
+    - Support for contextual vocabulary notes and usage examples
+
+    #### Workflow
+    1. **Image Upload**: Upload Japanese textbook page images  
+    2. **Text Extraction**: Use OCR API to extract text from the images (Currently the [LLMWhisperer API](https://docs.unstract.com/llmwhisperer/) is used)  
+    3. **LLM Processing**: Send both the extracted text and original image to an LLM (Currently the [Gemini API](https://ai.google.dev/gemini-api/docs?_gl=1*12oxa0f*_up*MQ..*_ga*MzA5MjA0NTQ0LjE3NDI2OTMzNzE.*_ga_P1DBVKWT6V*MTc0MjY5MzM3MC4xLjAuMTc0MjY5MzM3MC4wLjAuNDgyMDU2NTA5) is used)  
+    4. **Flashcard Generation**: Generate structured CSV data using specialized prompts  
+    5. **Export**: Save the resulting flashcards in Anki-compatible CSV format  
+
+    #### Flashcard Format
+    The generated flashcards follow a specific CSV structure:
+    - **Kanji column**: Contains the word in Kanji (or Hiragana/Katakana if no Kanji exists)  
+    - **Furigana column**: Contains the phonetic reading of the word in Hiragana  
+    - **English_Translation_and_Notes column**: Contains both the English translation and any usage or contextual notes  
+
+    Example output:
+    ```
+    "迷う [道に～]","まよう [みちに～]","lose one's way (e.g., get lost on the road)"
+    "先輩","せんぱい","senior (student, colleague, etc.)"
+    ```
+
+    #### Benefits
+    - **Accuracy**: Cross-references OCR text with the original image to fix errors  
+    - **Context-Aware**: Preserves usage examples and contextual information  
+    - **Time-Saving**: Automates the tedious process of manual flashcard creation  
+    - **Customizable**: Prompts can be adjusted for different textbook formats  
+
+    #### Applications
+    - Creating comprehensive JLPT study materials  
+    - Building personal vocabulary decks from textbooks  
+    - Supplementing classroom learning with digital flashcards  
+    - Archiving vocabulary from various Japanese learning resources
+    """)
+
+    st.divider()
 
     # Providing a file uploader for users to add images
     uploaded_images = st.file_uploader(
