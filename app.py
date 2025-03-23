@@ -34,7 +34,27 @@ def generate_japanese_flashcards(
     # -----------------------------
     # Load environment variables
     # -----------------------------
-    load_dotenv()
+    # Load environment variables from .env file if running locally
+    load_dotenv(override=True)
+
+    # Check if we're running locally by looking for a specific environment variable
+    is_local_dev = os.getenv("IS_LOCAL_DEV", "true").lower() == "true"
+
+    # Only try to access st.secrets if not in local development
+    if not is_local_dev:
+        try:
+            secrets = getattr(st, "secrets", {})
+            if "GOOGLE_GEMINI_API_KEY" in secrets:
+                os.environ["GOOGLE_GEMINI_API_KEY"] = secrets["GOOGLE_GEMINI_API_KEY"]
+            
+            if "LLMWHISPERER_BASE_URL_V2" in secrets:
+                os.environ["LLMWHISPERER_BASE_URL_V2"] = secrets["LLMWHISPERER_BASE_URL_V2"]
+
+            if "LLMWHISPERER_API_KEY" in secrets:    
+                os.environ["LLMWHISPERER_API_KEY"] = secrets["LLMWHISPERER_API_KEY"]
+        except Exception as e:
+            pass
+
     gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY")
     unstract_api_url = os.getenv("LLMWHISPERER_BASE_URL_V2")
     unstract_api_key = os.getenv("LLMWHISPERER_API_KEY")
