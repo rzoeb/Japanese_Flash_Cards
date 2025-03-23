@@ -38,7 +38,7 @@ def generate_japanese_flashcards(
     load_dotenv(override=True)
 
     # Check if we're running locally by looking for a specific environment variable
-    is_local_dev = os.getenv("IS_LOCAL_DEV", "true").lower() == "true"
+    is_local_dev = os.getenv("IS_LOCAL_DEV", "false").lower() == "true"
 
     # Only try to access st.secrets if not in local development
     if not is_local_dev:
