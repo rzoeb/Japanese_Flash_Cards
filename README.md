@@ -29,12 +29,12 @@ Example output:
 
 ## Repository Contents
 
-- app.py - Streamlit UI for the flashcard generator
-- Flashcard_Generation_LLM.ipynb - Jupyter notebook for experimentation (contains self-contained instructions)
-- LLM_Prompts.py - Prompts used for the LLM processing
-- base64_example_images.json - Example images encoded in base64 format
-- requirements.txt - List of Python dependencies
-- Sample images: Flashcard_App_Image_1.jpg and Flashcard_App_Image_2.jpeg
+- `app.py` - Streamlit UI for the flashcard generator
+- `Flashcard_Generation_LLM.ipynb` - Jupyter notebook for experimentation (contains self-contained instructions)
+- `LLM_Prompts.py` - Prompts used for the LLM processing
+- `base64_example_images.json` - Example images encoded in base64 format
+- `requirements.txt` - List of Python dependencies
+- Sample images: `Flashcard_App_Image_1.jpg` and `Flashcard_App_Image_2.jpeg`
 
 ## Setup and Installation
 
