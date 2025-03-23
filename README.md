@@ -51,6 +51,7 @@ Example output:
 
 3. Create a .env file in the root directory with the following variables:
    ```
+   IS_LOCAL_DEV = true
    GOOGLE_GEMINI_API_KEY=your_gemini_api_key
    LLMWHISPERER_BASE_URL_V2=your_llmwhisperer_base_url
    LLMWHISPERER_API_KEY=your_llmwhisperer_api_key
