@@ -1,0 +1,6 @@
+# Third-party dependencies
+streamlit>=1.32.0
+google-generativeai>=0.3.0
+Pillow>=10.0.0
+python-dotenv>=1.0.0
+unstract-llmwhisperer>=0.1.0
