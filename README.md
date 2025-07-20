@@ -95,12 +95,24 @@ The Flashcard_Generation_LLM.ipynb notebook contains self-contained instructions
 
 The application requires the following Python packages:
 - `streamlit` - For the web application interface
-- `google-generativeai` - To interact with Google's Gemini API
+- `google-genai` - To interact with Google's Gemini API (NEW - migrated from deprecated google-generativeai)
 - `Pillow` - For image processing
 - `python-dotenv` - For loading environment variables
 - `llmwhisperer-client` - For OCR capabilities via the LLMWhisperer API
 
 All dependencies are listed in the requirements.txt file.
+
+## Recent Updates
+
+**🚨 IMPORTANT: SDK Migration (Updated)**
+This repository has been migrated from the deprecated `google-generativeai` SDK to the new `google-genai` SDK. 
+
+**For existing users:**
+1. Uninstall the old SDK: `pip uninstall google-generativeai`
+2. Install the new SDK: `pip install google-genai>=1.26.0`
+3. All code has been updated to use the new API
+
+See `SDK_MIGRATION_GUIDE.md` for detailed migration information.
 
 ## Applications
 
