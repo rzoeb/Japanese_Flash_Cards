@@ -49,7 +49,6 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 ## Repository Contents
 
 - `app.py` - Main Streamlit application with advanced UI controls for model and prompt selection
-- `Flashcard_Generation_LLM.ipynb` - Jupyter notebook for experimentation and testing (contains self-contained instructions)
 - `LLM_Prompts.py` - All prompt templates for suitability checking, vocabulary generation, and Kanji flashcard creation
 - `model_information.json` - Configuration file containing model specifications, pricing, and image requirements
 - `base64_example_images.json` - Example images encoded in base64 format for enhanced processing accuracy
@@ -86,7 +85,9 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 
 ## Usage
 
-### Using the Streamlit UI
+There are two main ways to use the AI Japanese Flashcard Generator:
+
+### Method 1: Using the Streamlit Web Interface (Recommended)
 
 1. Run the Streamlit app:
    ```bash
@@ -108,9 +109,42 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 
 7. Download the generated flashcards as a CSV file ready for Anki import
 
-### Using the Jupyter Notebook
+### Method 2: Customizing and Running the Code Locally
 
-The Flashcard_Generation_LLM.ipynb notebook contains self-contained instructions and can be used for experimentation and customization. It's a great way to understand the workflow and make adjustments to the prompts or processing logic.
+For advanced users who want to customize the processing logic, modify prompts, or integrate the functionality into their own applications:
+
+1. **Open and examine `app.py`** to understand the core functions:
+   - `generate_japanese_flashcards()` - Main processing function
+   - `call_google_llm_structured_output_text()` - Gemini API interface
+   - `preprocess_image()` - Image optimization utilities
+   - `convert_flashcard_response_to_csv()` - Output formatting
+
+2. **Customize the processing** by modifying:
+   - Prompt templates in `LLM_Prompts.py`
+   - Model configurations in `model_information.json`
+   - Image preprocessing parameters
+   - Output formatting and CSV structure
+
+3. **Run custom processing** by calling the functions directly:
+   ```python
+   from app import generate_japanese_flashcards
+   from PIL import Image
+   
+   # Load your images
+   images = [uploaded_file_1, uploaded_file_2]  # Your image files
+   
+   # Generate flashcards with custom settings
+   flashcards, notes, stats = generate_japanese_flashcards(
+       uploaded_images=images,
+       selected_model="gemini-2.0-flash",
+       prompt_template="Vocabulary",
+       use_examples=True
+   )
+   ```
+
+4. **Integrate into your workflow** by importing and using the individual functions as needed
+
+This approach allows for complete customization of the flashcard generation process while maintaining access to all the advanced features like cost tracking, error handling, and schema validation.
 
 ## Enhanced Workflow
 
