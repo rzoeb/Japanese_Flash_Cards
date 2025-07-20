@@ -69,7 +69,7 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
    pip install -r requirements.txt
    ```
 
-3. Create a .env file in the root directory with the following variables:
+3. **(Optional for Web Interface)** Create a .env file in the root directory with the following variables:
    ```
    IS_LOCAL_DEV=true
    GOOGLE_GEMINI_API_KEY=your_gemini_api_key
@@ -77,9 +77,13 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
    LLMWHISPERER_API_KEY=your_llmwhisperer_api_key
    ```
 
+   **Note**: You can either:
+   - Create a `.env` file with your API keys (recommended for local development)
+   - Or enter your API keys directly in the web interface when running the app
+   
    You'll need to obtain:
-   - A Google Gemini API key from [Google AI Studio](https://ai.google.dev/)
-   - Access to [LLMWhisperer API](https://docs.unstract.com/llmwhisperer/) for OCR capabilities
+   - A Google Gemini API key from [Google AI Studio](https://ai.google.dev/gemini-api/docs/quickstart)
+   - Access to [LLMWhisperer API](https://docs.unstract.com/llmwhisperer/llm_whisperer/getting_started/llm_whisperer_registering/)
 
 4. Ensure `model_information.json` is present in the root directory (contains model configurations and pricing information)
 
@@ -96,18 +100,25 @@ There are two main ways to use the AI Japanese Flashcard Generator:
 
 2. Open the provided URL in your browser (typically http://localhost:8501)
 
-3. **Configure your settings:**
+3. **Enter your API keys:**
+   - **Google Gemini API Key**: [Get your API key here](https://ai.google.dev/gemini-api/docs/quickstart)
+   - **LLMWhisperer API Key**: [Register and get your API key here](https://docs.unstract.com/llmwhisperer/llm_whisperer/getting_started/llm_whisperer_registering/)
+   - **Privacy**: Your API keys are only used for the current session and are never stored
+
+4. **Configure your settings:**
    - Select your preferred Gemini model from the dropdown
    - Choose flashcard type: "Vocabulary" or "Kanji"
    - For Vocabulary mode: Toggle example images on/off for enhanced accuracy
 
-4. Upload one or more textbook images containing Japanese vocabulary (JPG, JPEG, PNG)
+5. Upload one or more textbook images containing Japanese vocabulary (JPG, JPEG, PNG)
 
-5. Click "Generate Flashcards" to process the images
+6. Click "Generate Flashcards" to process the images
 
-6. View real-time processing statistics including costs, tokens, and generation time
+7. View real-time processing statistics including costs, tokens, and generation time
 
-7. Download the generated flashcards as a CSV file ready for Anki import
+8. Download the generated flashcards as a CSV file ready for Anki import
+
+**Note**: If running locally with a `.env` file, API keys from the environment will be used as fallback if the input fields are left empty.
 
 ### Method 2: Customizing and Running the Code Locally
 
@@ -226,11 +237,18 @@ See the LICENSE file for details.
 
 ## Note
 
-The .env file containing API keys and configuration secrets is excluded from version control for security reasons. You'll need to create this file with your own API keys as described in the setup instructions. The application includes comprehensive error handling and will provide clear guidance if configuration issues are detected.
+**API Key Management**: You can provide API keys in two ways:
+- **Direct Input**: Enter API keys directly in the web interface (recommended for most users)
+- **Environment File**: Create a `.env` file with your API keys (recommended for local development)
+
+The `.env` file containing API keys and configuration secrets is excluded from version control for security reasons. The application includes comprehensive error handling and will provide clear guidance if configuration issues are detected.
+
+**Privacy**: API keys entered in the web interface are only used for the current session and are never stored or transmitted to third parties.
 
 ## Recent Updates
 
 This version includes major enhancements:
+- **Secure API Key Input**: Enter API keys directly in the web interface with session-only storage
 - Migration to Google GenAI SDK with structured output capabilities
 - Dual-mode flashcard generation (Vocabulary and Kanji)
 - Advanced model selection and configuration options
