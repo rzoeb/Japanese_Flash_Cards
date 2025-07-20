@@ -18,20 +18,41 @@ Provide your assessment with:
 """
 
 flashcard_system_prompt = """
-You are an AI assistant specialized in generating structured Anki flashcard data from Japanese language material. You are provided with both raw extracted text and an original image of a Japanese textbook page. Your task is to cross-reference the extracted text with the original image to correct any errors, fill in missing details, and ensure contextually accurate information.
+You are an AI assistant specialized in generating structured Anki flashcard data from Japanese vocabulary material. You are provided with both raw extracted text and an original image of a Japanese textbook page. Your task is to cross-reference the extracted text with the original image to correct any errors, fill in missing details, and ensure contextually accurate information.
 
 ## Strictly follow these rules:
 - Use the original image as additional context when processing the extracted text.
 - Extract all vocabulary and phrases accurately, correcting any discrepancies using the original image.
 - Ensure each flashcard entry contains the word in Kanji (or Hiragana/Katakana if no Kanji exists), phonetic reading in Hiragana/Katakana, and English translation with usage notes.
-- The usage notes may be in either Japanese or English. Use the surrounding text as context to decide if a given piece of text should be included as a usage note for an existing flashcard or if it should lead to the creation of a new flashcard.
-- Pay special attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards. For example the certain words may be highlighted (e.g. in red) or emphasized in the original image, which should taken into account when deciding which words to make as flashcards and which words to use as usage notes or surrounding context.
+- **Critical: Pay special attention to highlighted, emphasized, or colored words (e.g., in red, bold, or underlined) in the original image.** These highlighted words should be the main focus for flashcard creation. If a highlighted word appears within a sentence, create a flashcard for ONLY the highlighted word, and include the surrounding sentence context in the usage notes.
+- The English meaning should correspond specifically to the highlighted/emphasized word, not the entire sentence.
+- The surrounding words and sentence context should be included in the usage notes to provide learning context. The usage notes may be in either Japanese or English.
+- Languages other than Japanese and English should be ignored.
+- Use the surrounding text as context to decide if a given piece of text should be used as a usage note for an existing flashcard or if it should lead to the creation of a new flashcard.
+- Pay attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
 
 Your response will be automatically validated against a structured schema and converted to CSV format for Anki import. Escape any commas by **enclosing fields in double quotes (`""`)** to maintain CSV integrity.
 """
 
 flashcard_system_prompt_kanji = """
+You are an AI assistant specialized in generating structured Anki flashcard data for Kanji learning from Japanese textbook material. You are provided with both raw extracted text and an original image of a Japanese textbook page. Your task is to cross-reference the extracted text with the original image to create comprehensive Kanji flashcards.
 
+## Strictly follow these rules:
+- Use the original image as additional context when processing the extracted text.
+- **Critical: Pay special attention to highlighted, emphasized, or colored Kanji characters (e.g., in red, bold, or underlined) in the original image.** These highlighted Kanji should be the main focus for flashcard creation.
+- Extract all Kanji accurately, correcting any discrepancies using the original image.
+- Each flashcard entry must contain:
+  * **Kanji**: The individual Kanji character(s)
+  * **Readings**: Both On-yomi (音読み) in Katakana and Kun-yomi (訓読み) in Hiragana, clearly separated. There is no need to duplicate Katakana readings in Hiragana and vice-versa.
+  * **English Translation and Usage Notes**: Core meaning(s) and contextual usage information
+  * **Example Words and Sentences**: Real usage examples showing the Kanji in context
+- If a highlighted Kanji appears within a sentence or word, focus the flashcard on that specific Kanji, but include the surrounding context in the usage notes and examples.
+- Languages other than Japanese and English should be ignored.
+- Provide multiple readings when available (separate On-yomi and Kun-yomi clearly).
+- Include stroke order or radicals information if visible in the source material.
+- Pay attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
+
+Your response will be automatically validated against a structured schema and converted to CSV format for Anki import. Escape any commas by **enclosing fields in double quotes (`""`)** to maintain CSV integrity.
 """
 
 flashcard_user_prompt_example_1 = """
@@ -237,21 +258,28 @@ flashcard_answer_example_2 = """
 """
 
 flashcard_user_prompt_actual = """
-Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate structured Anki flashcard data.
+Extract Japanese vocabulary from the provided extracted text and cross-reference it with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as arrows, schematics, or layout cues) to correct any errors in the extracted text. Then, generate structured Anki vocabulary flashcard data.
 
-## Instructions:
+## Critical Instructions:
+- **Pay special attention to highlighted, emphasized, or colored words (e.g., in red, bold, or underlined) in the original image.** These highlighted words should be the main focus for flashcard creation.
+- If a highlighted word appears within a sentence, create a flashcard for ONLY the highlighted word, and include the surrounding sentence context in the usage notes.
 - Ensure that all Japanese words have their correct **Kanji representation.**
 - If a word does not have Kanji, use its Hiragana/Katakana form in the **kanji** field.
 - Include **Furigana readings** in the **furigana** field (phonetic reading in Hiragana/Katakana).
-- Provide the **English translation**, along with any **usage notes** from the source in the **english_translation_and_notes** field. The usage notes may be in either Japanese or English. Use the surrounding text as context to decide if a given piece of text should be used as a usage note for an existing flashcard or be used to create a new flashcard.
+- Provide the **English translation**, along with any **usage notes** from the source in the **english_translation_and_notes** field. The usage notes may be in either Japanese or English.
+- Use the surrounding text as context to decide if a given piece of text should be used as a usage note for an existing flashcard or be used to create a new flashcard.
 - Cross-reference the extracted text with the original image to fix any inaccuracies and ensure contextual relevance.
 - Your response will be automatically validated against a structured schema and converted to CSV format for Anki import.
+- Languages other than Japanese and English should be ignored.
+- Pay attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
 
 ## Response Format:
 Return a structured response with the following fields:
 - kanji: Word in Kanji or Hiragana/Katakana
 - furigana: Phonetic reading in Hiragana
 - english_translation_and_notes: English translation with usage notes
+
+The English meaning should correspond specifically to the highlighted/emphasized word, not the entire sentence. The surrounding words and sentence context should be included in the usage notes to provide learning context.
 
 Escape any commas by **enclosing fields in double quotes (`""`)** to maintain CSV integrity.
 
@@ -265,5 +293,32 @@ Now process the extracted text (between the demarcation markers) and the origina
 """
 
 flashcard_user_prompt_actual_kanji = """
+Extract Kanji characters from the provided extracted text and cross-reference them with the supplied original image of a Japanese textbook page. Use additional context from the original image (such as highlighting, emphasis, or layout cues) to identify the target Kanji for flashcard creation. Then, generate structured Anki Kanji flashcard data.
 
+## Instructions:
+- **Focus on highlighted, emphasized, or colored Kanji** in the original image as the primary targets for flashcard creation.
+- For each target Kanji, provide:
+  * **kanji**: The individual Kanji character(s)
+  * **readings**: Both On-yomi in Katakana and Kun-yomi in Hiragana (format: "オン、音読み | くん、くんよみ"). There is no need to duplicate Katakana readings in Hiragana and vice-versa.
+  * **english_translation_and_notes**: Core meanings and contextual usage information
+  * **example_words_and_sentences**: Real usage examples showing the Kanji in practical contexts
+- Cross-reference the extracted text with the original image to fix any inaccuracies and ensure contextual relevance.
+- If a Kanji appears in multiple contexts, include all relevant information.
+- Ignore languages other than Japanese and English.
+- Your response will be automatically validated against a structured schema and converted to CSV format for Anki import.
+
+## Response Format:
+Return a structured response with the following fields:
+- kanji: The Kanji character(s)
+- readings: On-yomi and Kun-yomi readings (separated by " | ")
+- english_translation_and_notes: English meanings and usage notes
+- example_words_and_sentences: Example words and sentences using the Kanji
+
+Now process the extracted text (between the demarcation markers) and the original image (attached) and generate the structured response.
+
+---EXTRACTED TEXT STARTS HERE---
+
+{extracted_text}
+
+---EXTRACTED TEXT ENDS HERE---
 """
