@@ -34,6 +34,15 @@ class FlashcardEntry(BaseModel):
 class FlashcardResponse(BaseModel):
     flashcards: List[FlashcardEntry] = Field(..., description="List of generated flashcards")
 
+class KanjiFlashcardEntry(BaseModel):
+    kanji: str = Field(..., description='Individual Kanji character(s)')
+    readings: str = Field(..., description='On-yomi and Kun-yomi readings separated by " | "')
+    english_translation_and_notes: str = Field(..., description='English meanings and usage notes')
+    example_words_and_sentences: str = Field(..., description='Example words and sentences using the Kanji')
+
+class KanjiFlashcardResponse(BaseModel):
+    flashcards: List[KanjiFlashcardEntry] = Field(..., description="List of generated Kanji flashcards")
+
 # Load model information for configuration
 def load_model_config():
     """Load model configuration from model_information.json"""
@@ -67,14 +76,26 @@ def setup_console_logger():
 
 # Convert Pydantic FlashcardResponse to CSV format
 def convert_flashcard_response_to_csv(flashcard_response):
-    """Convert FlashcardResponse to CSV format with proper quote wrapping"""
+    """Convert FlashcardResponse or KanjiFlashcardResponse to CSV format with proper quote wrapping"""
     csv_lines = []
-    for entry in flashcard_response.flashcards:
-        # Ensure each field is wrapped in double quotes and escape any internal quotes
-        kanji = f'"{entry.kanji.replace(chr(34), chr(34)+chr(34))}"'
-        furigana = f'"{entry.furigana.replace(chr(34), chr(34)+chr(34))}"'
-        english = f'"{entry.english_translation_and_notes.replace(chr(34), chr(34)+chr(34))}"'
-        csv_lines.append(f"{kanji},{furigana},{english}")
+    
+    # Check if it's a KanjiFlashcardResponse or regular FlashcardResponse
+    if hasattr(flashcard_response.flashcards[0], 'readings') if flashcard_response.flashcards else False:
+        # Kanji flashcard format: Kanji, Readings, English Translation and Notes, Example Words and Sentences
+        for entry in flashcard_response.flashcards:
+            kanji = f'"{entry.kanji.replace(chr(34), chr(34)+chr(34))}"'
+            readings = f'"{entry.readings.replace(chr(34), chr(34)+chr(34))}"'
+            english = f'"{entry.english_translation_and_notes.replace(chr(34), chr(34)+chr(34))}"'
+            examples = f'"{entry.example_words_and_sentences.replace(chr(34), chr(34)+chr(34))}"'
+            csv_lines.append(f"{kanji},{readings},{english},{examples}")
+    else:
+        # Regular vocabulary flashcard format: Kanji, Furigana, English Translation and Notes
+        for entry in flashcard_response.flashcards:
+            kanji = f'"{entry.kanji.replace(chr(34), chr(34)+chr(34))}"'
+            furigana = f'"{entry.furigana.replace(chr(34), chr(34)+chr(34))}"'
+            english = f'"{entry.english_translation_and_notes.replace(chr(34), chr(34)+chr(34))}"'
+            csv_lines.append(f"{kanji},{furigana},{english}")
+    
     return "\n".join(csv_lines)
 
 # Retry logic for API errors
@@ -432,12 +453,12 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
 
 # Function to generate Japanese flashcards from uploaded images
-def generate_japanese_flashcards(uploaded_images, base64_json_path="base64_example_images.json"):
+def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-flash", prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json"):
     """
     For each uploaded image file:
       1) Check if the image is suitable for flashcard generation using Gemini.
       2) If suitable, extract text (OCR) via LLMWhisperer, then generate flashcards.
-    Returns a string containing all flashcards from all suitable images.
+    Returns a string containing all flashcards from all suitable images, processing notes, and total stats.
     """
     
     # Setup logging and load configuration
@@ -480,7 +501,7 @@ def generate_japanese_flashcards(uploaded_images, base64_json_path="base64_examp
     # Initialize Google GenAI client
     try:
         client = genai.Client(api_key=gemini_api_key)
-        model_name = "gemini-2.0-flash"
+        model_name = selected_model
         logger.info(f"Initialized Google GenAI client with model: {model_name}")
     except Exception as e:
         logger.error(f"Failed to initialize Google client: {e}")
@@ -509,7 +530,7 @@ def generate_japanese_flashcards(uploaded_images, base64_json_path="base64_examp
     base64_example_image_dict = load_base64_images_from_json(base64_json_path)
     example_images_processed = {}
     
-    if base64_example_image_dict:
+    if base64_example_image_dict and use_examples:
         logger.info("Processing example images...")
         image_requirements_config = model_config.get("image_requirements", {})
         
@@ -529,6 +550,7 @@ def generate_japanese_flashcards(uploaded_images, base64_json_path="base64_examp
     )
     
     # Process each uploaded image
+    start_processing_time = time.time()
     combined_flashcards = ""
     image_processing_notes = []
     total_cost = 0.0
@@ -627,50 +649,82 @@ def generate_japanese_flashcards(uploaded_images, base64_json_path="base64_examp
         try:
             logger.info(f"Image #{idx}: Generating flashcards...")
             
-            # Prepare user prompt parts with examples and actual image
+            # Prepare user prompt parts based on template type
             user_prompt_parts_flashcards = []
             
-            # Add example images and prompts if available
-            if "flashcard_image_example_1" in example_images_processed and "flashcard_image_example_2" in example_images_processed:
-                user_prompt_parts_flashcards.extend([
-                    example_images_processed["flashcard_image_example_1"],
-                    flashcard_user_prompt_example_1,
-                    flashcard_answer_example_1,
-                    example_images_processed["flashcard_image_example_2"], 
-                    flashcard_user_prompt_example_2,
-                    flashcard_answer_example_2
-                ])
-            
-            # Add the actual image and prompt
-            user_prompt_parts_flashcards.extend([
-                processed_image,
-                flashcard_user_prompt_actual.format(extracted_text=extracted_text)
-            ])
-            
-            flashcard_result = call_google_llm_structured_output_text(
-                client=client,
-                model_name=model_name,
-                system_prompt=flashcard_system_prompt,
-                user_prompt_parts=user_prompt_parts_flashcards,
-                response_schema=FlashcardResponse,
-                logger=logger,
-                model_pricing_config=model_config,
-                temperature=0.3
-            )
-            
-            if flashcard_result["error"]:
-                msg = f"Image #{idx}: Error generating flashcards - {flashcard_result['error']}"
-                image_processing_notes.append(msg)
-                logger.error(msg)
-                continue
+            if prompt_template == "Vocabulary":
+                # Add example images and prompts if enabled and available
+                if use_examples and "flashcard_image_example_1" in example_images_processed and "flashcard_image_example_2" in example_images_processed:
+                    user_prompt_parts_flashcards.extend([
+                        example_images_processed["flashcard_image_example_1"],
+                        flashcard_user_prompt_example_1,
+                        flashcard_answer_example_1,
+                        example_images_processed["flashcard_image_example_2"], 
+                        flashcard_user_prompt_example_2,
+                        flashcard_answer_example_2
+                    ])
                 
-            flashcard_data = flashcard_result["data"]
+                # Add the actual image and prompt for vocabulary
+                user_prompt_parts_flashcards.extend([
+                    processed_image,
+                    flashcard_user_prompt_actual.format(extracted_text=extracted_text)
+                ])
+                
+                # Call API for vocabulary flashcards
+                flashcard_result = call_google_llm_structured_output_text(
+                    client=client,
+                    model_name=model_name,
+                    system_prompt=flashcard_system_prompt,
+                    user_prompt_parts=user_prompt_parts_flashcards,
+                    response_schema=FlashcardResponse,
+                    logger=logger,
+                    model_pricing_config=model_config,
+                    temperature=1.0
+                )
+                
+                if flashcard_result["error"]:
+                    msg = f"Image #{idx}: Error generating flashcards - {flashcard_result['error']}"
+                    image_processing_notes.append(msg)
+                    logger.error(msg)
+                    continue
+                    
+                flashcard_data = flashcard_result["data"]
+                flashcard_response = FlashcardResponse(**flashcard_data)
+                
+            elif prompt_template == "Kanji":
+                # Add the actual image and prompt for Kanji
+                user_prompt_parts_flashcards.extend([
+                    processed_image,
+                    flashcard_user_prompt_actual_kanji.format(extracted_text=extracted_text)
+                ])
+                
+                # Call API for Kanji flashcards
+                flashcard_result = call_google_llm_structured_output_text(
+                    client=client,
+                    model_name=model_name,
+                    system_prompt=flashcard_system_prompt_kanji,
+                    user_prompt_parts=user_prompt_parts_flashcards,
+                    response_schema=KanjiFlashcardResponse,
+                    logger=logger,
+                    model_pricing_config=model_config,
+                    temperature=1.0
+                )
+                
+                if flashcard_result["error"]:
+                    msg = f"Image #{idx}: Error generating flashcards - {flashcard_result['error']}"
+                    image_processing_notes.append(msg)
+                    logger.error(msg)
+                    continue
+                    
+                flashcard_data = flashcard_result["data"]
+                flashcard_response = KanjiFlashcardResponse(**flashcard_data)
+            
+            # Update totals
             total_cost += flashcard_result["cost"]
             total_tokens_input += flashcard_result["input_tokens"]
             total_tokens_output += flashcard_result["output_tokens"]
             
             # Convert to CSV format
-            flashcard_response = FlashcardResponse(**flashcard_data)
             csv_output = convert_flashcard_response_to_csv(flashcard_response)
             
             if csv_output.strip():
@@ -690,9 +744,18 @@ def generate_japanese_flashcards(uploaded_images, base64_json_path="base64_examp
             continue
 
     # Log final statistics
-    logger.info(f"Processing complete - Total cost: ${total_cost:.6f}, Total tokens: {total_tokens_input} in/{total_tokens_output} out")
+    total_processing_time = time.time() - start_processing_time
+    logger.info(f"Processing complete - Total cost: ${total_cost:.6f}, Total tokens: {total_tokens_input} in/{total_tokens_output} out, Processing time: {total_processing_time:.1f}s")
     
-    return combined_flashcards.strip(), image_processing_notes
+    # Prepare total statistics
+    total_stats = {
+        'cost': total_cost,
+        'tokens_input': total_tokens_input,
+        'tokens_output': total_tokens_output,
+        'processing_time': total_processing_time
+    }
+    
+    return combined_flashcards.strip(), image_processing_notes, total_stats
 
 # Function to handle the Streamlit app layout and user interaction
 # No parameters
@@ -723,50 +786,111 @@ def main():
 
     # Displaying a short description of the app
     st.markdown("""
-    ### Japanese Language Flashcard Generation
+    ### AI Japanese Flashcard Generator
 
     #### Overview
-    This App automates the creation of Japanese Language Anki flashcards from textbook images. It combines OCR technology with large language model processing to extract, verify, and format vocabulary into ready-to-import flashcards.
+    This app automates the creation of Japanese language Anki flashcards from textbook images using advanced AI technology. It combines OCR (Optical Character Recognition) with Google's Gemini language models to extract, verify, and format vocabulary or Kanji into ready-to-import flashcards.
 
-    #### Features
-    - Extract Japanese text from textbook images using OCR API
-    - Cross-reference extracted text with original images for accuracy
-    - Generate structured CSV flashcards with proper formatting
-    - Support for contextual vocabulary notes and usage examples
+    #### Key Features
+    - **Dual Flashcard Modes**: Generate vocabulary flashcards or dedicated Kanji learning cards
+    - **Multiple Gemini Models**: Choose from various [Google Gemini](https://ai.google.dev/gemini-api/docs) models (Flash, Pro, etc.) based on your needs
+    - **Intelligent Text Extraction**: Uses [LLMWhisperer OCR API](https://docs.unstract.com/llmwhisperer/) to extract text from textbook images
+    - **Cross-Reference Validation**: Compares extracted text with original images for maximum accuracy
+    - **Smart Highlighting Detection**: Automatically focuses on highlighted, emphasized, or colored text in source materials
+    - **Structured Output**: Generates properly formatted CSV data with Pydantic schema validation
+    - **Example Image Enhancement**: Optional example images improve processing accuracy (Vocabulary mode)
+    - **Real-time Statistics**: Track processing costs, token usage, and generation time
+
+    #### Supported Flashcard Types
+
+    **Vocabulary Flashcards:**
+    - **Kanji**: Word in Kanji (or Hiragana/Katakana if no Kanji exists)
+    - **Furigana**: Phonetic reading in Hiragana
+    - **English Translation & Notes**: Translation with contextual usage information
+
+    **Kanji Flashcards:**
+    - **Kanji**: Individual Kanji character(s)
+    - **Readings**: On-yomi and Kun-yomi readings separated by " | "
+    - **English Translation & Notes**: Core meanings and usage information
+    - **Example Words & Sentences**: Real usage examples in context
 
     #### Workflow
-    1. **Image Upload**: Upload Japanese textbook page images  
-    2. **Text Extraction**: Use OCR API to extract text from the images (Currently the [LLMWhisperer API](https://docs.unstract.com/llmwhisperer/) is used)  
-    3. **LLM Processing**: Send both the extracted text and original image to an LLM (Currently the [Gemini API](https://ai.google.dev/gemini-api/docs?_gl=1*12oxa0f*_up*MQ..*_ga*MzA5MjA0NTQ0LjE3NDI2OTMzNzE.*_ga_P1DBVKWT6V*MTc0MjY5MzM3MC4xLjAuMTc0MjY5MzM3MC4wLjAuNDgyMDU2NTA5) is used)  
-    4. **Flashcard Generation**: Generate structured CSV data using specialized prompts  
-    5. **Export**: Save the resulting flashcards in Anki-compatible CSV format  
+    1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary or Kanji)
+    2. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
+    3. **Suitability Check**: AI assesses if images contain suitable Japanese content
+    4. **Text Extraction**: LLMWhisperer OCR extracts text from images
+    5. **AI Processing**: Gemini models cross-reference OCR text with original images
+    6. **Flashcard Generation**: Creates structured flashcard data using specialized prompts
+    7. **Export**: Download results in Anki-compatible CSV format
 
-    #### Flashcard Format
-    The generated flashcards follow a specific CSV structure:
-    - **Kanji column**: Contains the word in Kanji (or Hiragana/Katakana if no Kanji exists)  
-    - **Furigana column**: Contains the phonetic reading of the word in Hiragana  
-    - **English_Translation_and_Notes column**: Contains both the English translation and any usage or contextual notes  
+    #### Example Output
 
-    Example output:
+    **Vocabulary Format:**
     ```
     "迷う [道に～]","まよう [みちに～]","lose one's way (e.g., get lost on the road)"
     "先輩","せんぱい","senior (student, colleague, etc.)"
     ```
 
-    #### Benefits
-    - **Accuracy**: Cross-references OCR text with the original image to fix errors  
-    - **Context-Aware**: Preserves usage examples and contextual information  
-    - **Time-Saving**: Automates the tedious process of manual flashcard creation  
-    - **Customizable**: Prompts can be adjusted for different textbook formats  
+    **Kanji Format:**
+    ```
+    "学","ガク | まな-ぶ","study, learning","学校 (がっこう) - school, 学ぶ (まなぶ) - to study"
+    "生","セイ | い-きる","life, birth","学生 (がくせい) - student, 生きる (いきる) - to live"
+    ```
 
-    #### Applications
-    - Creating comprehensive JLPT study materials  
-    - Building personal vocabulary decks from textbooks  
-    - Supplementing classroom learning with digital flashcards  
+    #### Advanced Features
+    - **Cost Tracking**: Real-time monitoring of API usage costs across different Gemini models
+    - **Token Analytics**: Input/output token counting for optimization
+    - **Processing Statistics**: Performance metrics including generation time
+    - **Error Handling**: Robust retry logic for API failures and rate limiting
+    - **Image Preprocessing**: Automatic image optimization for different model requirements
+
+    #### Use Cases
+    - Creating comprehensive JLPT study materials
+    - Building personal vocabulary decks from textbooks
+    - Generating Kanji learning flashcards with readings and examples
+    - Supplementing classroom learning with digital flashcards
     - Archiving vocabulary from various Japanese learning resources
+    - Batch processing multiple textbook pages efficiently
     """)
 
     st.divider()
+
+    # Configuration Section
+    st.subheader("Configuration")
+    
+    # Load model configuration for dropdown options
+    try:
+        model_config = load_model_config()
+        google_models = list(model_config.get("pricing", {}).get("google", {}).get("models", {}).keys())
+    except:
+        google_models = ["gemini-2.0-flash"]  # Fallback
+    
+    # Model selection dropdown
+    selected_model = st.selectbox(
+        "Select Gemini Model",
+        options=google_models,
+        index=google_models.index("gemini-2.0-flash") if "gemini-2.0-flash" in google_models else 0,
+        help="Choose which Gemini model to use for flashcard generation"
+    )
+    
+    # Prompt template selection
+    prompt_template = st.selectbox(
+        "Select Prompt Template",
+        options=["Vocabulary", "Kanji"],
+        index=0,
+        help="Choose the type of flashcards to generate"
+    )
+    
+    # Use example images toggle (only for Vocabulary)
+    use_examples = False
+    if prompt_template == "Vocabulary":
+        use_examples = st.radio(
+            "Use Example Images",
+            options=[True, False],
+            format_func=lambda x: "Yes (improved accuracy)" if x else "No (faster processing)",
+            index=0,
+            help="Include example images in the prompt for better accuracy (Vocabulary mode only)"
+        )
 
     # Providing a file uploader for users to add images
     uploaded_images = st.file_uploader(
@@ -783,14 +907,20 @@ def main():
             with st.spinner("Processing..."):
                 try:
                     # Generate the flashcards by calling the function
-                    flashcards_str, processing_notes = generate_japanese_flashcards(
+                    flashcards_str, processing_notes, total_stats = generate_japanese_flashcards(
                         uploaded_images=uploaded_images,
+                        selected_model=selected_model,
+                        prompt_template=prompt_template,
+                        use_examples=use_examples,
                         base64_json_path="base64_example_images.json"
                     )
 
                     # Display the processing status for each image
                     for note in processing_notes:
                         st.info(note)
+
+                    # Display total statistics
+                    st.success(f"Processing complete! Total cost: ${total_stats['cost']:.6f}, Total tokens: {total_stats['tokens_input']:,} in/{total_stats['tokens_output']:,} out, Processing time: {total_stats['processing_time']:.1f}s")
 
                     # If we have at least some flashcards, show a download button
                     if flashcards_str.strip():
@@ -800,7 +930,6 @@ def main():
                             file_name="generated_flashcards.txt",
                             mime="text/plain"
                         )
-                        st.success("Flashcards generated successfully!")
                     else:
                         st.warning("No flashcards were generated from the uploaded images.")
                 except Exception as e:
