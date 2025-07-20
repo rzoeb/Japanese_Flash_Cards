@@ -1,7 +1,8 @@
 # Building a Streamlit UI for code in 'Flashcard_Generation_LLM.ipynb'
 # Importing the required libraries
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import PIL.Image
 import json
 from unstract.llmwhisperer import LLMWhispererClientV2
@@ -67,15 +68,34 @@ def generate_japanese_flashcards(
         raise ValueError("LLMWHISPERER_API_KEY not found in environment.")
 
     # -----------------------------
-    # Configure the Gemini model
+    # Configure the Gemini client
     # -----------------------------
-    genai.configure(api_key=gemini_api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    # model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp-01-21")
+    client = genai.Client(api_key=gemini_api_key)
+    model_name = "gemini-2.0-flash"
+    # Alternative model: "gemini-2.0-flash-thinking-exp-01-21"
 
     # -----------------------------
     # Utility functions
     # -----------------------------
+    # Function to convert PIL Image to new SDK format
+    # pil_image: PIL Image object
+    # Returns: types.Part object for use with the new SDK
+    def pil_image_to_part(pil_image):
+        """Convert PIL Image to google.genai.types.Part"""
+        # Convert PIL image to bytes
+        img_buffer = BytesIO()
+        # Save as JPEG if not already in a supported format
+        if pil_image.format not in ['JPEG', 'PNG', 'GIF', 'WEBP']:
+            pil_image = pil_image.convert('RGB')
+            pil_image.save(img_buffer, format='JPEG')
+            mime_type = 'image/jpeg'
+        else:
+            pil_image.save(img_buffer, format=pil_image.format or 'JPEG')
+            mime_type = f'image/{(pil_image.format or "jpeg").lower()}'
+        
+        img_bytes = img_buffer.getvalue()
+        return types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
+    
     # Function to load base64 images from a JSON file
     # filepath: Path to the JSON file containing base64 image strings
     # Returns: Dictionary with image names as keys and PIL Image objects as values. Empty dictionary returned on error.
@@ -139,15 +159,17 @@ def generate_japanese_flashcards(
 
         # Prepare the content for suitability check
         content_suitability = [
-            suitability_system_prompt,
-            pil_image,
-            suitability_user_prompt,
+            types.Part.from_text(suitability_system_prompt),
+            pil_image_to_part(pil_image),
+            types.Part.from_text(suitability_user_prompt),
         ]
 
         # Check if the image is suitable for flashcard generation
         try:
-            response_suitability = model.generate_content(content_suitability)
-            response_suitability.resolve()  # Raises an exception on error
+            response_suitability = client.models.generate_content(
+                model=model_name,
+                contents=content_suitability
+            )
             # Extract JSON-like text from the model response
             json_string = (
                 response_suitability.text
@@ -182,29 +204,31 @@ def generate_japanese_flashcards(
             continue
 
         # Prepare the content for flashcard generation
-        content_flashcards = [flashcard_system_prompt]
+        content_flashcards = [types.Part.from_text(flashcard_system_prompt)]
 
         # If example images are available, include them in the prompt
         if image_example_1 and image_example_2:
             content_flashcards += [
-                image_example_1,
-                flashcard_user_prompt_example_1,
-                flashcard_answer_example_1,
-                image_example_2,
-                flashcard_user_prompt_example_2,
-                flashcard_answer_example_2,
+                pil_image_to_part(image_example_1),
+                types.Part.from_text(flashcard_user_prompt_example_1),
+                types.Part.from_text(flashcard_answer_example_1),
+                pil_image_to_part(image_example_2),
+                types.Part.from_text(flashcard_user_prompt_example_2),
+                types.Part.from_text(flashcard_answer_example_2),
             ]
 
         # Add the user prompt for the actual image's extracted text
         content_flashcards += [
-            pil_image,
-            flashcard_user_prompt_actual.format(extracted_text=image_actual_extracted_text),
+            pil_image_to_part(pil_image),
+            types.Part.from_text(flashcard_user_prompt_actual.format(extracted_text=image_actual_extracted_text)),
         ]
 
         # Generate the flashcards using Gemini
         try:
-            response_flashcards = model.generate_content(content_flashcards)
-            response_flashcards.resolve()  # Raises an exception on error
+            response_flashcards = client.models.generate_content(
+                model=model_name,
+                contents=content_flashcards
+            )
             flashcards_text = (
                 response_flashcards.text
                     .replace("```html", "")
