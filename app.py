@@ -21,6 +21,25 @@ import time
 # Importing all variables from LLM_Prompts.py
 from LLM_Prompts import *
 
+# API Key validation functions
+def validate_api_keys(gemini_api_key, llmwhisperer_api_key):
+    """Validate API key formats and provide helpful error messages"""
+    errors = []
+    
+    # Basic validation for Gemini API key
+    if gemini_api_key:
+        if len(gemini_api_key.strip()) < 10:
+            errors.append("Google Gemini API key appears to be too short. Please check your API key.")
+        elif not gemini_api_key.strip().replace('-', '').replace('_', '').isalnum():
+            errors.append("Google Gemini API key contains invalid characters.")
+    
+    # Basic validation for LLMWhisperer API key  
+    if llmwhisperer_api_key:
+        if len(llmwhisperer_api_key.strip()) < 10:
+            errors.append("LLMWhisperer API key appears to be too short. Please check your API key.")
+    
+    return errors
+
 # Pydantic Response Schemas
 class SuitabilityResponse(BaseModel):
     is_suitable: str = Field(..., description="Yes or No")
@@ -453,7 +472,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
 
 # Function to generate Japanese flashcards from uploaded images
-def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-flash", prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json"):
+def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-flash", prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json", gemini_api_key=None, llmwhisperer_api_key=None, llmwhisperer_base_url=None):
     """
     For each uploaded image file:
       1) Check if the image is suitable for flashcard generation using Gemini.
@@ -473,34 +492,60 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
     load_dotenv(override=True)
     is_local_dev = os.getenv("IS_LOCAL_DEV", "false").lower() == "true"
 
-    # Handle Streamlit secrets vs local environment
-    if not is_local_dev:
-        try:
-            secrets = getattr(st, "secrets", {})
-            if "GOOGLE_GEMINI_API_KEY" in secrets:
-                os.environ["GOOGLE_GEMINI_API_KEY"] = secrets["GOOGLE_GEMINI_API_KEY"]
-            if "LLMWHISPERER_BASE_URL_V2" in secrets:
-                os.environ["LLMWHISPERER_BASE_URL_V2"] = secrets["LLMWHISPERER_BASE_URL_V2"]
-            if "LLMWHISPERER_API_KEY" in secrets:    
-                os.environ["LLMWHISPERER_API_KEY"] = secrets["LLMWHISPERER_API_KEY"]
-        except Exception as e:
-            logger.warning(f"Could not access Streamlit secrets: {e}")
+    # Use provided API keys or fallback to environment/secrets
+    if gemini_api_key:
+        # Use the provided API key
+        final_gemini_api_key = gemini_api_key
+    else:
+        # Fallback to environment or Streamlit secrets
+        if not is_local_dev:
+            try:
+                secrets = getattr(st, "secrets", {})
+                if "GOOGLE_GEMINI_API_KEY" in secrets:
+                    os.environ["GOOGLE_GEMINI_API_KEY"] = secrets["GOOGLE_GEMINI_API_KEY"]
+            except Exception as e:
+                logger.warning(f"Could not access Streamlit secrets: {e}")
+        final_gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY")
 
-    # Get API keys
-    gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY")
-    unstract_api_url = os.getenv("LLMWHISPERER_BASE_URL_V2")
-    unstract_api_key = os.getenv("LLMWHISPERER_API_KEY")
+    if llmwhisperer_api_key:
+        # Use the provided API key
+        final_llmwhisperer_api_key = llmwhisperer_api_key
+    else:
+        # Fallback to environment or Streamlit secrets
+        if not is_local_dev:
+            try:
+                secrets = getattr(st, "secrets", {})
+                if "LLMWHISPERER_API_KEY" in secrets:    
+                    os.environ["LLMWHISPERER_API_KEY"] = secrets["LLMWHISPERER_API_KEY"]
+            except Exception as e:
+                logger.warning(f"Could not access Streamlit secrets: {e}")
+        final_llmwhisperer_api_key = os.getenv("LLMWHISPERER_API_KEY")
 
-    if not gemini_api_key:
-        raise ValueError("GOOGLE_GEMINI_API_KEY not found in environment.")
-    if not unstract_api_url:
-        raise ValueError("LLMWHISPERER_BASE_URL_V2 not found in environment.")
-    if not unstract_api_key:
-        raise ValueError("LLMWHISPERER_API_KEY not found in environment.")
+    if llmwhisperer_base_url:
+        # Use the provided base URL
+        final_llmwhisperer_base_url = llmwhisperer_base_url
+    else:
+        # Fallback to environment or Streamlit secrets
+        if not is_local_dev:
+            try:
+                secrets = getattr(st, "secrets", {})
+                if "LLMWHISPERER_BASE_URL_V2" in secrets:
+                    os.environ["LLMWHISPERER_BASE_URL_V2"] = secrets["LLMWHISPERER_BASE_URL_V2"]
+            except Exception as e:
+                logger.warning(f"Could not access Streamlit secrets: {e}")
+        final_llmwhisperer_base_url = os.getenv("LLMWHISPERER_BASE_URL_V2")
+
+    # Validate API keys
+    if not final_gemini_api_key:
+        raise ValueError("Google Gemini API key is required. Please provide it in the interface or set GOOGLE_GEMINI_API_KEY in your environment.")
+    if not final_llmwhisperer_base_url:
+        raise ValueError("LLMWhisperer base URL not found. Please ensure LLMWHISPERER_BASE_URL_V2 is set in your environment.")
+    if not final_llmwhisperer_api_key:
+        raise ValueError("LLMWhisperer API key is required. Please provide it in the interface or set LLMWHISPERER_API_KEY in your environment.")
 
     # Initialize Google GenAI client
     try:
-        client = genai.Client(api_key=gemini_api_key)
+        client = genai.Client(api_key=final_gemini_api_key)
         model_name = selected_model
         logger.info(f"Initialized Google GenAI client with model: {model_name}")
     except Exception as e:
@@ -544,8 +589,8 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
 
     # Initialize LLMWhisperer client
     llm_whisper_client = LLMWhispererClientV2(
-        base_url=unstract_api_url, 
-        api_key=unstract_api_key, 
+        base_url=final_llmwhisperer_base_url, 
+        api_key=final_llmwhisperer_api_key, 
         logging_level="ERROR"
     )
     
@@ -800,6 +845,14 @@ def main():
     - **Structured Output**: Generates properly formatted CSV data with Pydantic schema validation
     - **Example Image Enhancement**: Optional example images improve processing accuracy (Vocabulary mode)
     - **Real-time Statistics**: Track processing costs, token usage, and generation time
+    - **Secure API Key Management**: Input your API keys directly in the interface (keys are never stored)
+
+    #### Required API Access
+    This application requires API keys for two services:
+    - **Google Gemini API**: For advanced language model processing - [Get API Key](https://ai.google.dev/gemini-api/docs/quickstart)
+    - **LLMWhisperer API**: For high-accuracy OCR text extraction - [Get API Key](https://docs.unstract.com/llmwhisperer/llm_whisperer/getting_started/llm_whisperer_registering/)
+
+    **Privacy Note**: API keys entered in this interface are only used for the current session and are never stored or transmitted to any third parties.
 
     #### Supported Flashcard Types
 
@@ -815,13 +868,14 @@ def main():
     - **Example Words & Sentences**: Real usage examples in context
 
     #### Workflow
-    1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary or Kanji)
-    2. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
-    3. **Suitability Check**: AI assesses if images contain suitable Japanese content
-    4. **Text Extraction**: LLMWhisperer OCR extracts text from images
-    5. **AI Processing**: Gemini models cross-reference OCR text with original images
-    6. **Flashcard Generation**: Creates structured flashcard data using specialized prompts
-    7. **Export**: Download results in Anki-compatible CSV format
+    1. **API Setup**: Enter your Google Gemini and LLMWhisperer API keys below
+    2. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary or Kanji)
+    3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
+    4. **Suitability Check**: AI assesses if images contain suitable Japanese content
+    5. **Text Extraction**: LLMWhisperer OCR extracts text from images
+    6. **AI Processing**: Gemini models cross-reference OCR text with original images
+    7. **Flashcard Generation**: Creates structured flashcard data using specialized prompts
+    8. **Export**: Download results in Anki-compatible CSV format
 
     #### Example Output
 
@@ -852,6 +906,51 @@ def main():
     - Archiving vocabulary from various Japanese learning resources
     - Batch processing multiple textbook pages efficiently
     """)
+
+    st.divider()
+
+    # API Key Configuration Section
+    st.subheader("🔑 API Configuration")
+    st.markdown("""
+    **Required**: Please enter your API keys below to use the application.
+    
+    - **Google Gemini API Key**: [Get your API key here](https://ai.google.dev/gemini-api/docs/quickstart)
+    - **LLMWhisperer API Key**: [Register and get your API key here](https://docs.unstract.com/llmwhisperer/llm_whisperer/getting_started/llm_whisperer_registering/)
+    
+    🔒 **Privacy Note**: Your API keys are only used for this session and are never stored or shared.
+    """)
+    
+    # Check if running locally for .env fallback
+    load_dotenv(override=True)
+    is_local_dev = os.getenv("IS_LOCAL_DEV", "false").lower() == "true"
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        gemini_api_key = st.text_input(
+            "Google Gemini API Key",
+            type="password",
+            placeholder="Enter your Gemini API key...",
+            help="Your Google Gemini API key for language model access"
+        )
+    
+    with col2:
+        llmwhisperer_api_key = st.text_input(
+            "LLMWhisperer API Key", 
+            type="password",
+            placeholder="Enter your LLMWhisperer API key...",
+            help="Your LLMWhisperer API key for OCR text extraction"
+        )
+    
+    # Fallback to environment variables if running locally and fields are empty
+    if is_local_dev:
+        if not gemini_api_key:
+            gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY", "")
+        if not llmwhisperer_api_key:
+            llmwhisperer_api_key = os.getenv("LLMWHISPERER_API_KEY", "")
+        
+        if gemini_api_key or llmwhisperer_api_key:
+            st.info("🔧 Running in local development mode. API keys from .env file will be used as fallback.")
 
     st.divider()
 
@@ -892,16 +991,35 @@ def main():
             help="Include example images in the prompt for better accuracy (Vocabulary mode only)"
         )
 
+    # Check if API keys are provided and validate them
+    api_keys_provided = bool(gemini_api_key and llmwhisperer_api_key)
+    api_key_errors = []
+    
+    if gemini_api_key or llmwhisperer_api_key:
+        api_key_errors = validate_api_keys(gemini_api_key, llmwhisperer_api_key)
+    
+    if not api_keys_provided:
+        st.warning("⚠️ Please enter both API keys above to enable file upload and flashcard generation.")
+    elif api_key_errors:
+        for error in api_key_errors:
+            st.error(f"❌ {error}")
+    
     # Providing a file uploader for users to add images
     uploaded_images = st.file_uploader(
         "Upload image(s) of textbook pages",
         type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        disabled=not api_keys_provided or bool(api_key_errors),
+        help="Upload images after entering valid API keys above" if not api_keys_provided or api_key_errors else "Upload your textbook images here"
     )
 
     # Button to initiate flashcard generation
-    if st.button("Generate Flashcards"):
-        if not uploaded_images:
+    if st.button("Generate Flashcards", disabled=not api_keys_provided or bool(api_key_errors)):
+        if not api_keys_provided:
+            st.error("❌ Please enter both Google Gemini and LLMWhisperer API keys before generating flashcards.")
+        elif api_key_errors:
+            st.error("❌ Please fix the API key validation errors above before generating flashcards.")
+        elif not uploaded_images:
             st.warning("Please upload at least one image.")
         else:
             with st.spinner("Processing..."):
@@ -912,7 +1030,9 @@ def main():
                         selected_model=selected_model,
                         prompt_template=prompt_template,
                         use_examples=use_examples,
-                        base64_json_path="base64_example_images.json"
+                        base64_json_path="base64_example_images.json",
+                        gemini_api_key=gemini_api_key,
+                        llmwhisperer_api_key=llmwhisperer_api_key
                     )
 
                     # Display the processing status for each image
@@ -932,8 +1052,17 @@ def main():
                         )
                     else:
                         st.warning("No flashcards were generated from the uploaded images.")
+                except ValueError as ve:
+                    # Handle API key and configuration errors specifically
+                    error_msg = str(ve)
+                    if "API key" in error_msg:
+                        st.error(f"❌ API Key Error: {error_msg}")
+                        st.info("💡 Please check that your API keys are correct and have the necessary permissions.")
+                    else:
+                        st.error(f"❌ Configuration Error: {error_msg}")
                 except Exception as e:
-                    st.error(f"An error occurred: {e}")
+                    st.error(f"❌ An unexpected error occurred: {e}")
+                    st.info("💡 Please check your API keys and try again. If the problem persists, contact support.")
                     # Log the full error for debugging
                     logger = setup_console_logger()
                     logger.error(f"Streamlit app error: {e}", exc_info=True)
