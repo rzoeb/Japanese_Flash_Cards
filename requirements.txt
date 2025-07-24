@@ -1,6 +1,7 @@
 # Third-party dependencies
 streamlit>=1.32.0
 google-genai>=0.2.0
+google-api-core
 Pillow>=10.0.0
 python-dotenv>=1.0.0
 llmwhisperer-client>=0.1.0
