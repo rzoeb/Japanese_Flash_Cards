@@ -48,9 +48,9 @@
                     "input_greater_than_200k_prompt": 2.5,
                     "output_greater_than_200k_prompt": 15.0
                 },
-                "gemini-2.5-flash-lite-preview-06-17": {
+                "gemini-2.5-flash-lite": {
                     "input": 0.1,
-                    "input_audio": 0.5,
+                    "input_audio": 0.3,
                     "output": 0.4
                 },
                 "gemini-2.0-flash": {
@@ -311,7 +311,7 @@
                     "rpd": 1000,
                     "max_output_tokens_request": 65536
                 },
-                "gemini-2.5-flash-lite-preview-06-17": {
+                "gemini-2.5-flash-lite": {
                     "context_window_tokens": 1000000,
                     "rpm": 4000,
                     "tpm": 4000000,
@@ -639,7 +639,7 @@
             "supported_built_in_tools": ["code_execution", "google_url_context", "google_search_grounding"],
             "supports_extended_thinking": true
         },
-        "gemini-2.5-flash-lite-preview-06-17": {
+        "gemini-2.5-flash-lite": {
             "description": "Preview of next-gen Gemini Pro, large context, advanced reasoning (potentially).",
             "use_cases": [
                 "Experimental features",
