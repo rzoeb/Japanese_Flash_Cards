@@ -1019,7 +1019,7 @@ def main():
             "Custom Instructions",
             placeholder="Enter additional instructions for the AI. For example: 'Focus on business vocabulary' or 'Include more context from surrounding sentences'. These instructions cannot change the output format, but can influence the content and focus of the generated flashcards.",
             help="These instructions will be added to the AI prompt to customize flashcard generation.",
-            height=120
+            height=130
         )
 
     # Check if API keys are provided and validate them
