@@ -10,6 +10,7 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 
 - **Dual Flashcard Modes**: Generate vocabulary flashcards or dedicated Kanji learning cards
 - **Multiple Gemini Models**: Choose from various Google Gemini models (Flash, Pro, etc.) based on your needs
+- **Custom Instructions**: Add your own specific instructions to guide the AI in generating flashcards according to your requirements
 - **Intelligent Text Extraction**: Uses LLMWhisperer OCR API to extract text from textbook images
 - **Cross-Reference Validation**: Compares extracted text with original images for maximum accuracy
 - **Smart Highlighting Detection**: Automatically focuses on highlighted, emphasized, or colored text in source materials
@@ -109,6 +110,7 @@ There are two main ways to use the AI Japanese Flashcard Generator:
    - Select your preferred Gemini model from the dropdown
    - Choose flashcard type: "Vocabulary" or "Kanji"
    - For Vocabulary mode: Toggle example images on/off for enhanced accuracy
+   - Optionally enable custom instructions and add specific guidance for the AI (e.g., "Focus on business vocabulary" or "Include more context from surrounding sentences")
 
 5. Upload one or more textbook images containing Japanese vocabulary (JPG, JPEG, PNG)
 
@@ -160,13 +162,14 @@ This approach allows for complete customization of the flashcard generation proc
 ## Enhanced Workflow
 
 1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary or Kanji)
-2. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
-3. **Suitability Check**: AI assesses if images contain suitable Japanese content for flashcard generation
-4. **Text Extraction**: LLMWhisperer OCR API extracts text from images with high accuracy
-5. **AI Processing**: Gemini models cross-reference OCR text with original images using advanced prompts
-6. **Smart Detection**: Automatically identifies highlighted, emphasized, or colored text as priority content
-7. **Flashcard Generation**: Creates structured flashcard data using specialized prompts and Pydantic validation
-8. **Statistics & Export**: View processing metrics and download results in Anki-compatible CSV format
+2. **Custom Instructions**: Optionally add specific instructions to guide the AI's processing according to your learning needs
+3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
+4. **Suitability Check**: AI assesses if images contain suitable Japanese content for flashcard generation
+5. **Text Extraction**: LLMWhisperer OCR API extracts text from images with high accuracy
+6. **AI Processing**: Gemini models cross-reference OCR text with original images using advanced prompts and your custom instructions
+7. **Smart Detection**: Automatically identifies highlighted, emphasized, or colored text as priority content
+8. **Flashcard Generation**: Creates structured flashcard data using specialized prompts and Pydantic validation
+9. **Statistics & Export**: View processing metrics and download results in Anki-compatible CSV format
 
 ## Advanced Features
 
@@ -176,6 +179,7 @@ This approach allows for complete customization of the flashcard generation proc
 - **Error Handling**: Robust retry logic with exponential backoff for API failures and rate limiting
 - **Image Preprocessing**: Automatic image optimization based on model-specific requirements
 - **Schema Validation**: Pydantic-based output validation ensures consistent, high-quality results
+- **Custom Instructions**: Add personalized instructions to tailor flashcard generation to specific learning goals and requirements
 
 ## Dependencies
 
@@ -197,8 +201,8 @@ All dependencies with specific version requirements are listed in the requiremen
 - **Textbook Digitization**: Convert physical textbook vocabulary into digital flashcard format
 - **Kanji Learning**: Generate dedicated Kanji flashcards with readings, meanings, and usage examples
 - **Classroom Integration**: Supplement traditional learning with modern spaced repetition techniques
-- **Personal Study**: Build customized vocabulary decks from various Japanese learning resources
-- **Batch Processing**: Efficiently process multiple textbook pages and chapters
+- **Personal Study**: Build customized vocabulary decks from various Japanese learning resources with tailored instructions
+- **Batch Processing**: Efficiently process multiple textbook pages and chapters with consistent custom guidance
 - **Academic Research**: Archive and analyze vocabulary patterns from educational materials
 
 ## System Requirements
