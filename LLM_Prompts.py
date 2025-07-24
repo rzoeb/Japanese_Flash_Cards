@@ -30,6 +30,7 @@ You are an AI assistant specialized in generating structured Anki flashcard data
 - Languages other than Japanese and English should be ignored.
 - Use the surrounding text as context to decide if a given piece of text should be used as a usage note for an existing flashcard or if it should lead to the creation of a new flashcard.
 - Pay attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
+- Customised 'Additional Instructions' may also be provided. If so, aim to follow them as closely as possible.
 
 Your response will be automatically validated against a structured schema and converted to CSV format for Anki import. Escape any commas by **enclosing fields in double quotes (`""`)** to maintain CSV integrity.
 """
@@ -51,6 +52,7 @@ You are an AI assistant specialized in generating structured Anki flashcard data
 - Provide multiple readings when available (separate On-yomi and Kun-yomi clearly).
 - Include stroke order or radicals information if visible in the source material.
 - Pay attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
+- Customised 'Additional Instructions' may also be provided. If so, aim to follow them as closely as possible.
 
 Your response will be automatically validated against a structured schema and converted to CSV format for Anki import. Escape any commas by **enclosing fields in double quotes (`""`)** to maintain CSV integrity.
 """

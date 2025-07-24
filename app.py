@@ -901,7 +901,7 @@ def main():
             options=[True, False],
             format_func=lambda x: "Yes (improved accuracy)" if x else "No (faster processing)",
             index=0,
-            help="Include example images in the prompt for better accuracy (Vocabulary mode only)"
+            help="Include example images in the prompt for better accuracy (Vocabulary mode only). Please note that if you have supplied your own custom instructions, using example images may result in unexpected behavior or a decrease in accuracy."
         )
 
     # Custom instructions toggle and input
@@ -911,15 +911,15 @@ def main():
         options=[False, True],
         format_func=lambda x: "Yes" if x else "No",
         index=0,
-        help="Add your own custom instructions to guide the AI in generating flashcards"
+        help="Add your own custom instructions to guide the AI in generating flashcards. Please note that these instructions can only influence the content and focus of the generated flashcards. They cannot change the output format."
     )
     
     custom_instructions = ""
     if use_custom_instructions:
         custom_instructions = st.text_area(
             "Custom Instructions",
-            placeholder="Enter additional instructions for the AI. For example: 'Focus on business vocabulary' or 'Include more context from surrounding sentences'",
-            help="These instructions will be added to the AI prompt to customize flashcard generation",
+            placeholder="Enter additional instructions for the AI. For example: 'Focus on business vocabulary' or 'Include more context from surrounding sentences'. These instructions cannot change the output format, but can influence the content and focus of the generated flashcards.",
+            help="These instructions will be added to the AI prompt to customize flashcard generation.",
             height=100
         )
 
