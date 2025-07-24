@@ -273,6 +273,8 @@ Extract Japanese vocabulary from the provided extracted text and cross-reference
 - Languages other than Japanese and English should be ignored.
 - Pay attention to elements such as arrows, schematics, and layout cues to ensure accurate and contextually relevant flashcards.
 
+{additional_instructions}
+
 ## Response Format:
 Return a structured response with the following fields:
 - kanji: Word in Kanji or Hiragana/Katakana
@@ -306,6 +308,8 @@ Extract Kanji characters from the provided extracted text and cross-reference th
 - If a Kanji appears in multiple contexts, include all relevant information.
 - Ignore languages other than Japanese and English.
 - Your response will be automatically validated against a structured schema and converted to CSV format for Anki import.
+
+{additional_instructions}
 
 ## Response Format:
 Return a structured response with the following fields:

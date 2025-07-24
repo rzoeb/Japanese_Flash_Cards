@@ -453,7 +453,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
 
 # Function to generate Japanese flashcards from uploaded images
-def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-flash", prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json"):
+def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-flash", prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json", custom_instructions=""):
     """
     For each uploaded image file:
       1) Check if the image is suitable for flashcard generation using Gemini.
@@ -665,9 +665,13 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     ])
                 
                 # Add the actual image and prompt for vocabulary
+                additional_instructions_text = f"\n## Additional Instructions:\n{custom_instructions}" if custom_instructions.strip() else ""
                 user_prompt_parts_flashcards.extend([
                     processed_image,
-                    flashcard_user_prompt_actual.format(extracted_text=extracted_text)
+                    flashcard_user_prompt_actual.format(
+                        extracted_text=extracted_text,
+                        additional_instructions=additional_instructions_text
+                    )
                 ])
                 
                 # Call API for vocabulary flashcards
@@ -693,9 +697,13 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                 
             elif prompt_template == "Kanji":
                 # Add the actual image and prompt for Kanji
+                additional_instructions_text = f"\n## Additional Instructions:\n{custom_instructions}" if custom_instructions.strip() else ""
                 user_prompt_parts_flashcards.extend([
                     processed_image,
-                    flashcard_user_prompt_actual_kanji.format(extracted_text=extracted_text)
+                    flashcard_user_prompt_actual_kanji.format(
+                        extracted_text=extracted_text,
+                        additional_instructions=additional_instructions_text
+                    )
                 ])
                 
                 # Call API for Kanji flashcards
@@ -794,6 +802,7 @@ def main():
     #### Key Features
     - **Dual Flashcard Modes**: Generate vocabulary flashcards or dedicated Kanji learning cards
     - **Multiple Gemini Models**: Choose from various [Google Gemini](https://ai.google.dev/gemini-api/docs) models (Flash, Pro, etc.) based on your needs
+    - **Custom Instructions**: Add your own specific instructions to guide the AI in generating flashcards according to your requirements
     - **Intelligent Text Extraction**: Uses [LLMWhisperer OCR API](https://docs.unstract.com/llmwhisperer/) to extract text from textbook images
     - **Cross-Reference Validation**: Compares extracted text with original images for maximum accuracy
     - **Smart Highlighting Detection**: Automatically focuses on highlighted, emphasized, or colored text in source materials
@@ -816,12 +825,13 @@ def main():
 
     #### Workflow
     1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary or Kanji)
-    2. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
-    3. **Suitability Check**: AI assesses if images contain suitable Japanese content
-    4. **Text Extraction**: LLMWhisperer OCR extracts text from images
-    5. **AI Processing**: Gemini models cross-reference OCR text with original images
-    6. **Flashcard Generation**: Creates structured flashcard data using specialized prompts
-    7. **Export**: Download results in Anki-compatible CSV format
+    2. **Custom Instructions**: Optionally add specific instructions to guide the AI's processing (e.g., "Focus on business vocabulary" or "Include more context")
+    3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
+    4. **Suitability Check**: AI assesses if images contain suitable Japanese content
+    5. **Text Extraction**: LLMWhisperer OCR extracts text from images
+    6. **AI Processing**: Gemini models cross-reference OCR text with original images, following your custom instructions
+    7. **Flashcard Generation**: Creates structured flashcard data using specialized prompts
+    8. **Export**: Download results in Anki-compatible CSV format
 
     #### Example Output
 
@@ -843,6 +853,7 @@ def main():
     - **Processing Statistics**: Performance metrics including generation time
     - **Error Handling**: Robust retry logic for API failures and rate limiting
     - **Image Preprocessing**: Automatic image optimization for different model requirements
+    - **Customizable Processing**: Add your own instructions to tailor flashcard generation to specific needs
 
     #### Use Cases
     - Creating comprehensive JLPT study materials
@@ -851,6 +862,7 @@ def main():
     - Supplementing classroom learning with digital flashcards
     - Archiving vocabulary from various Japanese learning resources
     - Batch processing multiple textbook pages efficiently
+    - Customizing flashcard focus for specific topics or learning goals
     """)
 
     st.divider()
@@ -892,6 +904,25 @@ def main():
             help="Include example images in the prompt for better accuracy (Vocabulary mode only)"
         )
 
+    # Custom instructions toggle and input
+    st.divider()
+    use_custom_instructions = st.radio(
+        "Add Custom Instructions",
+        options=[False, True],
+        format_func=lambda x: "Yes" if x else "No",
+        index=0,
+        help="Add your own custom instructions to guide the AI in generating flashcards"
+    )
+    
+    custom_instructions = ""
+    if use_custom_instructions:
+        custom_instructions = st.text_area(
+            "Custom Instructions",
+            placeholder="Enter additional instructions for the AI. For example: 'Focus on business vocabulary' or 'Include more context from surrounding sentences'",
+            help="These instructions will be added to the AI prompt to customize flashcard generation",
+            height=100
+        )
+
     # Providing a file uploader for users to add images
     uploaded_images = st.file_uploader(
         "Upload image(s) of textbook pages",
@@ -912,7 +943,8 @@ def main():
                         selected_model=selected_model,
                         prompt_template=prompt_template,
                         use_examples=use_examples,
-                        base64_json_path="base64_example_images.json"
+                        base64_json_path="base64_example_images.json",
+                        custom_instructions=custom_instructions if use_custom_instructions else ""
                     )
 
                     # Display the processing status for each image
