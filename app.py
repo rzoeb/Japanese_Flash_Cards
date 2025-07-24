@@ -966,51 +966,6 @@ def main():
 
     st.divider()
 
-    # API Key Configuration Section
-    st.subheader("🔑 API Configuration")
-    st.markdown("""
-    **Required**: Please enter your API keys below to use the application.
-    
-    - **Google Gemini API Key**: [Get your API key here](https://ai.google.dev/gemini-api/docs/quickstart)
-    - **LLMWhisperer API Key**: [Register and get your API key here](https://docs.unstract.com/llmwhisperer/llm_whisperer/getting_started/llm_whisperer_registering/)
-    
-    🔒 **Privacy Note**: Your API keys are only used for this session and are never stored or shared.
-    """)
-    
-    # Check if running locally for .env fallback
-    load_dotenv(override=True)
-    is_local_dev = os.getenv("IS_LOCAL_DEV", "false").lower() == "true"
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        gemini_api_key = st.text_input(
-            "Google Gemini API Key",
-            type="password",
-            placeholder="Enter your Gemini API key...",
-            help="Your Google Gemini API key for language model access"
-        )
-    
-    with col2:
-        llmwhisperer_api_key = st.text_input(
-            "LLMWhisperer API Key", 
-            type="password",
-            placeholder="Enter your LLMWhisperer API key...",
-            help="Your LLMWhisperer API key for OCR text extraction"
-        )
-    
-    # Fallback to environment variables if running locally and fields are empty
-    if is_local_dev:
-        if not gemini_api_key:
-            gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY", "")
-        if not llmwhisperer_api_key:
-            llmwhisperer_api_key = os.getenv("LLMWHISPERER_API_KEY", "")
-        
-        if gemini_api_key or llmwhisperer_api_key:
-            st.info("🔧 Running in local development mode. API keys from .env file will be used as fallback.")
-
-    st.divider()
-
     # Configuration Section
     st.subheader("Configuration")
     
@@ -1064,7 +1019,7 @@ def main():
             "Custom Instructions",
             placeholder="Enter additional instructions for the AI. For example: 'Focus on business vocabulary' or 'Include more context from surrounding sentences'. These instructions cannot change the output format, but can influence the content and focus of the generated flashcards.",
             help="These instructions will be added to the AI prompt to customize flashcard generation.",
-            height=100
+            height=120
         )
 
     # Check if API keys are provided and validate them
