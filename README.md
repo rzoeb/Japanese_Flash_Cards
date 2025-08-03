@@ -8,14 +8,14 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 
 ## Key Features
 
-- **Dual Flashcard Modes**: Generate vocabulary flashcards or dedicated Kanji learning cards
+- **Triple Flashcard Modes**: Generate vocabulary flashcards, dedicated Kanji learning cards, or grammar pattern flashcards
 - **Multiple Gemini Models**: Choose from various Google Gemini models (Flash, Pro, etc.) based on your needs
 - **Custom Instructions**: Add your own specific instructions to guide the AI in generating flashcards according to your requirements
 - **Intelligent Text Extraction**: Uses LLMWhisperer OCR API to extract text from textbook images
 - **Cross-Reference Validation**: Compares extracted text with original images for maximum accuracy
 - **Smart Highlighting Detection**: Automatically focuses on highlighted, emphasized, or colored text in source materials
 - **Structured Output**: Generates properly formatted CSV data with Pydantic schema validation
-- **Example Image Enhancement**: Optional example images improve processing accuracy (Vocabulary mode)
+- **Example Image Enhancement**: Optional example images improve processing accuracy for all modes
 - **Real-time Statistics**: Track processing costs, token usage, and generation time
 - **Advanced Error Handling**: Robust retry logic for API failures and rate limiting
 - **Image Preprocessing**: Automatic image optimization for different model requirements
@@ -33,6 +33,11 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 - **English Translation & Notes**: Core meanings and usage information
 - **Example Words & Sentences**: Real usage examples in context
 
+### Grammar Flashcards
+- **Grammar Point**: The grammar pattern in Kanji or Hiragana/Katakana (e.g., ～ている, ～たら, ～ばかり)
+- **English Explanation & Notes**: Clear explanation of the grammar usage, meaning, and contextual notes
+- **Example Sentences**: Real Japanese sentences demonstrating the grammar point in context
+
 ## Example Output
 
 ### Vocabulary Format:
@@ -45,6 +50,11 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 ```
 "学","ガク | まな-ぶ","study, learning","学校 (がっこう) - school, 学ぶ (まなぶ) - to study"
 "生","セイ | い-きる","life, birth","学生 (がくせい) - student, 生きる (いきる) - to live"
+```
+
+### Grammar Format:
+```
+"V-て + もかまわない | い-Adj(～くて) + もかまわない | な-Adj/N + で + もかまわない","Formal pattern meaning ""it doesn't matter (even if) ~ / it's acceptable to ~"" and used to allow or give permission.","ここに座ってもかまいませんか。| 間に合わなかったら、あしたでもかまいません。"
 ```
 
 ## Repository Contents
@@ -99,8 +109,8 @@ There are two main ways to use the AI Japanese Flashcard Generator:
 
 3. **Configure your settings:**
    - Select your preferred Gemini model from the dropdown
-   - Choose flashcard type: "Vocabulary" or "Kanji"
-   - For Vocabulary mode: Toggle example images on/off for enhanced accuracy
+   - Choose flashcard type: "Vocabulary", "Kanji", or "Grammar"
+   - For all modes: Toggle example images on/off for enhanced accuracy (Vocabulary: 3 examples, Kanji: 1 example, Grammar: 2 examples)
    - Optionally enable custom instructions and add specific guidance for the AI (e.g., "Focus on business vocabulary" or "Include more context from surrounding sentences")
 
 4. Upload one or more textbook images containing Japanese vocabulary (JPG, JPEG, PNG)
@@ -150,7 +160,7 @@ This approach allows for complete customization of the flashcard generation proc
 
 ## Enhanced Workflow
 
-1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary or Kanji)
+1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary, Kanji, or Grammar)
 2. **Custom Instructions**: Optionally add specific instructions to guide the AI's processing according to your learning needs
 3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
 4. **Suitability Check**: AI assesses if images contain suitable Japanese content for flashcard generation
@@ -189,6 +199,7 @@ All dependencies with specific version requirements are listed in the requiremen
 - **JLPT Preparation**: Create comprehensive study materials for Japanese Language Proficiency Tests
 - **Textbook Digitization**: Convert physical textbook vocabulary into digital flashcard format
 - **Kanji Learning**: Generate dedicated Kanji flashcards with readings, meanings, and usage examples
+- **Grammar Mastery**: Create comprehensive grammar pattern flashcards with explanations and example sentences
 - **Classroom Integration**: Supplement traditional learning with modern spaced repetition techniques
 - **Personal Study**: Build customized vocabulary decks from various Japanese learning resources with tailored instructions
 - **Batch Processing**: Efficiently process multiple textbook pages and chapters with consistent custom guidance
