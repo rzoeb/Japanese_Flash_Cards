@@ -5,6 +5,7 @@ from google import genai
 from google.genai import types as google_types
 from google.genai import errors as genai_errors
 import datetime
+import warnings
 import PIL.Image
 from PIL import ImageOps
 import json
@@ -162,6 +163,40 @@ def build_generation_config(model_name, model_config, response_schema, system_pr
         if thinking_level:
             config["thinking_config"] = google_types.ThinkingConfig(thinking_level=thinking_level)
     return google_types.GenerateContentConfig(**config)
+
+# Upload limits (public app hardening)
+MAX_UPLOAD_MB = 20                 # per file; a 48 MP phone JPEG is about 10-20 MB
+MAX_FILES_PER_RUN = 10
+MAX_PIXELS_JPEG = 120_000_000      # admits 48-108 MP phone photos; large JPEGs are decoded at reduced scale (draft)
+MAX_PIXELS_OTHER = 40_000_000      # PNG cannot be decoded at reduced scale
+ALLOWED_FORMATS = ("JPEG", "PNG")  # matches the uploader's type=["jpg", "jpeg", "png"]
+
+PIL.Image.MAX_IMAGE_PIXELS = MAX_PIXELS_JPEG
+warnings.simplefilter("error", PIL.Image.DecompressionBombWarning)  # backstop: never decode past the limit
+
+def check_image_limits(image_format, width, height):
+    """Raise ValueError if the image dimensions exceed the per-format pixel limit (checked before decoding)."""
+    limit = MAX_PIXELS_JPEG if image_format == "JPEG" else MAX_PIXELS_OTHER
+    if width * height > limit:
+        raise ValueError(f"Image is {width}x{height} ({width * height / 1e6:.0f} MP); the limit for {image_format} is {limit / 1e6:.0f} MP. Please resize it.")
+
+def open_uploaded_image(uploaded_file, target_edge=3072):
+    """Open an uploaded image safely: size, format and dimension checks happen before any pixel is decoded."""
+    uploaded_file.seek(0, 2); size_bytes = uploaded_file.tell(); uploaded_file.seek(0)  # works for UploadedFile, BytesIO and open files
+    if size_bytes > MAX_UPLOAD_MB * 1024 * 1024:
+        raise ValueError(f"File is {size_bytes / 1e6:.1f} MB; the limit is {MAX_UPLOAD_MB} MB.")
+    try:
+        img = PIL.Image.open(uploaded_file, formats=ALLOWED_FORMATS)  # reads the header only
+    except PIL.UnidentifiedImageError:
+        raise ValueError("Only JPEG and PNG images are supported.")
+    except (PIL.Image.DecompressionBombError, PIL.Image.DecompressionBombWarning):
+        # Image.open() runs Pillow's own bomb check; with the warning promoted to an error, anything over MAX_IMAGE_PIXELS lands here
+        raise ValueError(f"Image has too many pixels (over {MAX_PIXELS_JPEG / 1e6:.0f} MP). Please resize it.")
+    check_image_limits(img.format, *img.size)
+    if img.format == "JPEG":
+        img.draft(img.mode, (target_edge, target_edge))  # decode at 1/2, 1/4 or 1/8 scale when the photo is much larger than needed
+    img.load()
+    return img
 
 # Image preprocessing function from unstract_multiple_llm_text_image.py
 def preprocess_image(image, provider_list, logger, image_requirements_config):
@@ -473,7 +508,9 @@ def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, 
       2) If suitable, extract text (OCR) via LLMWhisperer, then generate flashcards.
     Returns a string containing all flashcards from all suitable images, processing notes, and total stats.
     """
-    
+    if len(uploaded_images) > MAX_FILES_PER_RUN:
+        raise ValueError(f"Please upload at most {MAX_FILES_PER_RUN} images per run.")
+
     # Setup logging and load configuration
     logger = setup_console_logger()
     try:
@@ -602,7 +639,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, 
         
         try:
             # Convert uploaded file to PIL image
-            pil_image = PIL.Image.open(uploaded_file)
+            pil_image = open_uploaded_image(uploaded_file)
             logger.info(f"Image #{idx}: Loaded PIL image {pil_image.size}")
         except Exception as e:
             msg = f"Image #{idx}: Error opening file - {e}"
@@ -927,7 +964,7 @@ def main():
     #### Workflow
     1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary, Kanji, or Grammar)
     2. **Custom Instructions**: Optionally add specific instructions to guide the AI's processing (e.g., "Focus on business vocabulary" or "Include more context")
-    3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
+    3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG; up to 10 images, 20 MB each)
     4. **Suitability Check**: AI assesses if images contain suitable Japanese content
     5. **Text Extraction**: LLMWhisperer OCR extracts text from images
     6. **AI Processing**: Gemini models cross-reference OCR text with original images, following your custom instructions
@@ -1040,13 +1077,16 @@ def main():
     uploaded_images = st.file_uploader(
         "Upload image(s) of textbook pages",
         type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        max_upload_size=MAX_UPLOAD_MB
     )
 
     # Button to initiate flashcard generation
     if st.button("Generate Flashcards"):
         if not uploaded_images:
             st.warning("Please upload at least one image.")
+        elif len(uploaded_images) > MAX_FILES_PER_RUN:
+            st.error(f"Please upload at most {MAX_FILES_PER_RUN} images per run (you selected {len(uploaded_images)}).")
         else:
             with st.spinner("Processing..."):
                 try:
