@@ -209,12 +209,12 @@
     },
     "image_requirements": {
         "google": {
-            "source_url": "https://ai.google.dev/gemini-api/docs/vision?lang=python",
+            "source_url": "https://ai.google.dev/gemini-api/docs/image-understanding",
             "max_pixels": 150000000,
-            "max_size_mb": 20,
+            "max_size_mb": 4,
             "format": "base64",
-            "max_edge": null,
-            "media_type": "image/png"
+            "max_edge": 3072,
+            "media_type": "image/jpeg"
         },
         "anthropic": {
             "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/vision",

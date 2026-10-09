@@ -186,9 +186,9 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         max_edge_candidates = [req.get('max_edge', float('inf')) for req in provider_requirements if req.get('max_edge', float('inf')) is not None]
         max_edge = min(max_edge_candidates) if max_edge_candidates else float('inf')
 
-        # Setting the required image format and media_type ('base64' and 'image/png')
+        # Output format: base64 JPEG by default (small enough to send inline; config can override)
         required_format = 'base64'
-        media_type = 'image/png'
+        media_type = next((req.get('media_type') for req in provider_requirements if req.get('media_type')), 'image/jpeg')
 
         # Reducing "max_size_mb" by 30% to account for base64 encoding overhead (minimum 1MB)
         max_size_mb = max(1, int(max_size_mb * 0.7))
@@ -197,12 +197,17 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
 
         img_copy = image.copy()
 
-        # --- Handle Non-RGB/RGBA Modes ---
-        if img_copy.mode not in ('RGB', 'RGBA'):
+        # --- Handle Non-RGB/RGBA Modes (JPEG cannot store alpha, so flatten RGBA onto white) ---
+        if img_copy.mode not in ('RGB', 'RGBA') or (img_copy.mode == 'RGBA' and 'jpeg' in media_type):
             logger.warning(f"Input image mode is '{img_copy.mode}'. Converting to 'RGB' for compatibility.")
             print(f"WARN: Converting image mode '{img_copy.mode}' to 'RGB'.")
             try:
-                img_copy = img_copy.convert('RGB')
+                if img_copy.mode == 'RGBA':
+                    background = PIL.Image.new('RGB', img_copy.size, (255, 255, 255))
+                    background.paste(img_copy, mask=img_copy.split()[3])
+                    img_copy = background
+                else:
+                    img_copy = img_copy.convert('RGB')
             except Exception as convert_e:
                 logger.error(f"Failed to convert image mode from {img_copy.mode} to RGB: {convert_e}", exc_info=True)
                 print(f"ERROR: Failed to convert image mode: {convert_e}")
@@ -243,7 +248,7 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         temp_buffer = BytesIO()
         save_format = 'PNG' if media_type and 'png' in media_type.lower() else 'JPEG'
         logger.info(f"Checking size using format: {save_format}")
-        quality = 95
+        quality = 90
 
         def get_image_size_bytes(img, buffer, fmt, qual=None):
             buffer.seek(0); buffer.truncate()
@@ -330,21 +335,12 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
                 contents.append(part_data)
                 logger.debug(f"Added text part to contents.")
             elif isinstance(part_data, dict) and part_data.get("type") == "base64":
-                base64_image = part_data['data']
-                media_type_from_dict = part_data.get('media_type')
-                
-                save_format = 'PNG'
-                mime_type_for_upload = 'image/png'
-
-                image_buffer = BytesIO()
-                image_buffer.write(base64.b64decode(base64_image))
-                image_buffer.seek(0)
-
-                display_name = f"uploaded_base64_image_{i}_{save_format.lower()}"
-                logger.info(f"Uploading Base64 image as {save_format} (MIME: {mime_type_for_upload}, Display: {display_name}) to File API...")
-                uploaded_file = client.files.upload(file=image_buffer, config={"mime_type": mime_type_for_upload, "display_name": display_name})
-                contents.append(uploaded_file)
-                logger.info(f"Image uploaded. File API URI: {uploaded_file.uri}, Name: {uploaded_file.name}")
+                # Send images inline (no Files API upload, nothing to clean up afterwards)
+                contents.append(google_types.Part.from_bytes(
+                    data=base64.b64decode(part_data["data"]),
+                    mime_type=part_data.get("media_type", "image/jpeg"),
+                ))
+                logger.debug(f"Added inline image part ({part_data.get('media_type', 'image/jpeg')}).")
             else:
                 logger.warning(f"Unknown part type in user_prompt_parts: {type(part_data)}. Skipping.")
         except Exception as e:
@@ -464,16 +460,8 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
     except Exception as e:
         logger.error(f"Unexpected error calling Google API ({model_name}): {e}", exc_info=True)
-        return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count, 
+        return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count,
                "cost": cost, "token_source": token_source, "error": str(e)}
-    
-    finally:
-        # Delete uploaded files from Gemini Files API Server
-        try:
-            for file in client.files.list():
-                client.files.delete(name=file.name)
-        except Exception as cleanup_e:
-            logger.warning(f"Failed to cleanup uploaded files: {cleanup_e}")
 
 # Function to generate Japanese flashcards from uploaded images
 def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json", custom_instructions=""):
