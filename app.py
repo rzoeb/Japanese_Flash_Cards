@@ -4,6 +4,7 @@ import streamlit as st
 from google import genai
 from google.genai import types as google_types
 from google.genai import errors as genai_errors
+import csv
 import datetime
 import warnings
 import PIL.Image
@@ -11,7 +12,7 @@ from PIL import ImageOps
 import json
 from unstract.llmwhisperer import LLMWhispererClientV2
 import os
-from io import BytesIO
+from io import BytesIO, StringIO
 from dotenv import load_dotenv
 import base64
 import logging
@@ -114,6 +115,17 @@ def convert_flashcard_response_to_csv(flashcard_response):
             csv_lines.append(f"{kanji},{furigana},{english}")
     
     return "\n".join(csv_lines)
+
+# Column headers for the results table, per mode (same order as the CSV fields)
+CARD_COLUMNS = {
+    "Vocabulary": ["Kanji", "Furigana", "English translation and notes"],
+    "Kanji": ["Kanji", "Readings", "English translation and notes", "Example words and sentences"],
+    "Grammar": ["Grammar point", "English explanation and notes", "Example sentences"],
+}
+
+def flashcards_csv_to_rows(flashcards_str):
+    """Parse the Anki CSV text (every field quoted, embedded quotes doubled) back into rows for display."""
+    return [row for row in csv.reader(StringIO(flashcards_str)) if row]
 
 # Defaults and Gemini client helpers
 DEFAULT_MODEL = "gemini-3.8-flash"
@@ -1109,11 +1121,16 @@ def main():
 
                     # If we have at least some flashcards, show a download button
                     if flashcards_str.strip():
+                        columns = CARD_COLUMNS[prompt_template]
+                        rows = flashcards_csv_to_rows(flashcards_str)
+                        st.subheader(f"Generated flashcards ({len(rows)})")
+                        st.dataframe([dict(zip(columns, row)) for row in rows], hide_index=True, width="stretch")
                         st.download_button(
                             label="Download Flashcards",
                             data=flashcards_str,
                             file_name="generated_flashcards.txt",
-                            mime="text/plain"
+                            mime="text/plain",
+                            on_click="ignore"  # keep the results on screen after downloading
                         )
                     else:
                         st.warning("No flashcards were generated from the uploaded images.")
