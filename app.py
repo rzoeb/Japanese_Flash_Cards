@@ -1,25 +1,39 @@
-# Building a Streamlit UI for code in 'Flashcard_Generation_LLM.ipynb'
+# Streamlit app: AI Japanese Flashcard Generator (photos of Japanese study pages -> Anki flashcards)
 # Importing the required libraries
 import streamlit as st
 from google import genai
 from google.genai import types as google_types
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors as genai_errors
+import csv
+import datetime
+import warnings
 import PIL.Image
 from PIL import ImageOps
 import json
 from unstract.llmwhisperer import LLMWhispererClientV2
 import os
-from io import BytesIO
+from io import BytesIO, StringIO
 from dotenv import load_dotenv
 import base64
 import logging
 from pydantic import BaseModel, Field
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from typing import List
 import time
+import zlib
 
-# Importing all variables from LLM_Prompts.py
-from LLM_Prompts import *
+# Prompt templates
+from LLM_Prompts import (
+    suitability_system_prompt, suitability_user_prompt,
+    flashcard_system_prompt, flashcard_system_prompt_kanji, flashcard_system_prompt_grammar,
+    flashcard_user_prompt_example_1, flashcard_answer_example_1,
+    flashcard_user_prompt_example_2, flashcard_answer_example_2,
+    flashcard_user_prompt_example_3, flashcard_answer_example_3,
+    flashcard_user_prompt_actual,
+    flashcard_user_prompt_kanji_example_1, flashcard_answer_kanji_example_1, flashcard_user_prompt_actual_kanji,
+    flashcard_user_prompt_grammar_example_1, flashcard_answer_grammar_example_1,
+    flashcard_user_prompt_grammar_example_2, flashcard_answer_grammar_example_2,
+    flashcard_user_prompt_actual_grammar,
+)
 
 # API Key validation functions
 def validate_api_keys(gemini_api_key, llmwhisperer_api_key):
@@ -74,7 +88,7 @@ class GrammarFlashcardResponse(BaseModel):
 def load_model_config():
     """Load model configuration from model_information.json"""
     try:
-        with open("model_information.json", "r") as f:
+        with open("model_information.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         print(f"Warning: Could not load model_information.json: {e}")
@@ -133,33 +147,165 @@ def convert_flashcard_response_to_csv(flashcard_response):
     
     return "\n".join(csv_lines)
 
-# Retry logic for API errors
-def should_retry_api_call(exception):
-    """Determine if API call should be retried based on exception type"""
-    retryable_exceptions = [
-        google_exceptions.ResourceExhausted,
-        google_exceptions.ServiceUnavailable, 
-        google_exceptions.InternalServerError,
-        google_exceptions.DeadlineExceeded
-    ]
-    
-    if isinstance(exception, tuple(retryable_exceptions)):
-        return True
-        
-    # Check status codes
-    if hasattr(exception, 'code'):
-        retryable_codes = [8, 13, 14, 4]  # gRPC codes for rate limit, internal, unavailable, deadline
-        return exception.code in retryable_codes
-    
-    return False
+# Column headers for the results table, per mode (same order as the CSV fields)
+CARD_COLUMNS = {
+    "Vocabulary": ["Kanji", "Furigana", "English translation and notes"],
+    "Kanji": ["Kanji", "Readings", "English translation and notes", "Example words and sentences"],
+    "Grammar": ["Grammar point", "English explanation and notes", "Example sentences"],
+}
 
-retry_on_api_error = retry(
-    wait=wait_exponential(multiplier=1, min=4, max=60),
-    stop=stop_after_attempt(5),
-    retry=retry_if_exception(should_retry_api_call)
-)
+def flashcards_csv_to_rows(flashcards_str):
+    """Parse the Anki CSV text (every field quoted, embedded quotes doubled) back into rows for display."""
+    return [row for row in csv.reader(StringIO(flashcards_str)) if row]
 
-# Image preprocessing function from unstract_multiple_llm_text_image.py
+# Defaults and Gemini client helpers
+DEFAULT_MODEL = "gemini-3.8-flash"
+RETRYABLE_HTTP_CODES = [408, 429, 500, 502, 503, 504]
+LLMWHISPERER_DEFAULT_BASE_URL = "https://llmwhisperer-api.us-central.unstract.com/api/v2"
+
+def build_genai_client(api_key):
+    """Gemini client with the SDK's built-in retries (the SDK does NOT retry unless retry_options is set)."""
+    return genai.Client(
+        api_key=api_key,
+        http_options=google_types.HttpOptions(
+            timeout=180_000,  # milliseconds
+            retry_options=google_types.HttpRetryOptions(
+                attempts=4,  # 1 call + 3 retries
+                initial_delay=2.0,
+                max_delay=30.0,
+                http_status_codes=RETRYABLE_HTTP_CODES,
+            ),
+        ),
+    )
+
+def get_google_model_info(model_config, model_name):
+    return model_config.get("pricing", {}).get("google", {}).get("models", {}).get(model_name, {})
+
+def resolve_model_pricing(model_info, today=None):
+    """Return the prices in force today: the numeric base prices, overlaid by every price_changes entry already in effect."""
+    today = today or datetime.date.today()
+    # Only numeric keys are prices; label, family, access_note, thinking_levels and price_changes are metadata
+    pricing = {k: v for k, v in model_info.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+    for change in sorted(model_info.get("price_changes", []), key=lambda c: c["effective_from"]):
+        if datetime.date.fromisoformat(change["effective_from"]) <= today:
+            pricing.update({k: v for k, v in change.items() if k != "effective_from"})
+    return pricing
+
+def build_generation_config(model_name, model_config, response_schema, system_prompt, call_kind):
+    """Gemini 3.x: no sampling params, thinking_level per call kind. Gemini 2.5: keep the old temperatures."""
+    model_info = get_google_model_info(model_config, model_name)
+    config = {
+        "system_instruction": system_prompt,
+        "response_mime_type": "application/json",
+        "response_json_schema": response_schema.model_json_schema(),
+    }
+    if model_info.get("family") == "gemini-2.5":
+        config["temperature"] = 0.1 if call_kind == "suitability" else 1.0
+    else:
+        thinking_level = model_info.get("thinking_levels", {}).get(call_kind)
+        if thinking_level:
+            config["thinking_config"] = google_types.ThinkingConfig(thinking_level=thinking_level)
+    return google_types.GenerateContentConfig(**config)
+
+# Upload limits (public app hardening)
+MAX_UPLOAD_MB = 20                 # per file; a 48 MP phone JPEG is about 10-20 MB
+MAX_FILES_PER_RUN = 10
+MAX_PIXELS_JPEG = 120_000_000      # admits 48-108 MP phone photos; large JPEGs are decoded at reduced scale (draft)
+MAX_PIXELS_OTHER = 40_000_000      # PNG cannot be decoded at reduced scale
+ALLOWED_FORMATS = ("JPEG", "PNG")  # matches the uploader's type=["jpg", "jpeg", "png"]
+
+PIL.Image.MAX_IMAGE_PIXELS = MAX_PIXELS_JPEG
+warnings.simplefilter("error", PIL.Image.DecompressionBombWarning)  # backstop: never decode past the limit
+
+def check_image_limits(image_format, width, height):
+    """Raise ValueError if the image dimensions exceed the per-format pixel limit (checked before decoding)."""
+    limit = MAX_PIXELS_JPEG if image_format == "JPEG" else MAX_PIXELS_OTHER
+    if width * height > limit:
+        raise ValueError(f"Image is {width}x{height} ({width * height / 1e6:.0f} MP); the limit for {image_format} is {limit / 1e6:.0f} MP. Please resize it.")
+
+def open_uploaded_image(uploaded_file, target_edge=3072):
+    """Open an uploaded image safely: size, format and dimension checks happen before any pixel is decoded."""
+    uploaded_file.seek(0, 2); size_bytes = uploaded_file.tell(); uploaded_file.seek(0)  # works for UploadedFile, BytesIO and open files
+    if size_bytes > MAX_UPLOAD_MB * 1024 * 1024:
+        raise ValueError(f"File is {size_bytes / 1e6:.1f} MB; the limit is {MAX_UPLOAD_MB} MB.")
+    try:
+        img = PIL.Image.open(uploaded_file, formats=ALLOWED_FORMATS)  # reads the header only
+    except PIL.UnidentifiedImageError:
+        raise ValueError("Only JPEG and PNG images are supported.")
+    except (PIL.Image.DecompressionBombError, PIL.Image.DecompressionBombWarning):
+        # Image.open() runs Pillow's own bomb check; with the warning promoted to an error, anything over MAX_IMAGE_PIXELS lands here
+        raise ValueError(f"Image has too many pixels (over {MAX_PIXELS_JPEG / 1e6:.0f} MP). Please resize it.")
+    check_image_limits(img.format, *img.size)
+    if img.format == "JPEG":
+        img.draft(img.mode, (target_edge, target_edge))  # decode at 1/2, 1/4 or 1/8 scale when the photo is much larger than needed
+    img.load()
+    return img
+
+# Photo metadata: what the OCR service may receive besides the image data itself
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_KEEP_CHUNKS = {b"IHDR", b"PLTE", b"tRNS", b"IDAT", b"IEND", b"gAMA", b"cHRM", b"sRGB", b"iCCP", b"sBIT", b"pHYs", b"bKGD"}
+
+def orientation_only_exif(orientation):
+    """EXIF block (the "Exif" header plus TIFF data) holding only the orientation tag."""
+    exif = PIL.Image.Exif()
+    exif[0x0112] = orientation
+    return exif.tobytes()
+
+def strip_image_metadata(data, orientation=1):
+    """Remove EXIF (incl. GPS), XMP, comments and appended data from JPEG/PNG bytes without touching the image data.
+
+    The compressed image data is copied byte for byte, so the decoded pixels are identical. The colour profile (ICC),
+    the Adobe colour-transform segment and the orientation (as the only EXIF tag) are kept.
+    """
+    keep_orientation = orientation in range(2, 9)
+    if data[:2] == b"\xff\xd8":  # JPEG
+        out, i, exif_written = bytearray(data[:2]), 2, False
+        while i + 1 < len(data):
+            if data[i] != 0xFF or data[i + 1] == 0xFF:
+                i += 1  # stray or fill byte between segments (Pillow skips these too)
+                continue
+            marker = data[i + 1]
+            if 0xD0 <= marker <= 0xD7 or marker == 0x01:  # standalone markers have no length field
+                out += data[i:i + 2]
+                i += 2
+                continue
+            if marker == 0xDA:  # start of scan: copy the image data up to and including EOI; drop anything appended
+                end = data.find(b"\xff\xd9", i + 2)
+                return bytes(out + (data[i:end + 2] if end != -1 else data[i:]))
+            length = int.from_bytes(data[i + 2:i + 4], "big")
+            segment, payload = data[i:i + 2 + length], data[i + 4:i + 2 + length]
+            if marker == 0xE1 and payload.startswith(b"Exif\x00\x00"):
+                if keep_orientation and not exif_written:
+                    exif_bytes = orientation_only_exif(orientation)
+                    out += b"\xff\xe1" + (len(exif_bytes) + 2).to_bytes(2, "big") + exif_bytes
+                    exif_written = True
+            elif 0xE0 <= marker <= 0xEF or marker == 0xFE:  # APPn and COM: keep only what affects decoding
+                if (marker == 0xE0
+                        or (marker == 0xE2 and payload.startswith(b"ICC_PROFILE\x00"))
+                        or (marker == 0xEE and payload.startswith(b"Adobe"))):
+                    out += segment
+            else:
+                out += segment  # quantisation/Huffman tables, frame header, restart interval
+            i += 2 + length
+        raise ValueError("JPEG has no image data.")
+    if data[:8] == PNG_SIGNATURE:
+        out, i, exif_written = bytearray(PNG_SIGNATURE), 8, False
+        while i + 8 <= len(data):
+            length = int.from_bytes(data[i:i + 4], "big")
+            chunk_type = data[i + 4:i + 8]
+            if chunk_type == b"IDAT" and keep_orientation and not exif_written:
+                tiff = orientation_only_exif(orientation)[6:]  # PNG's eXIf chunk holds the TIFF data without the "Exif" header
+                out += len(tiff).to_bytes(4, "big") + b"eXIf" + tiff + zlib.crc32(b"eXIf" + tiff).to_bytes(4, "big")
+                exif_written = True
+            if chunk_type in PNG_KEEP_CHUNKS:
+                out += data[i:i + 12 + length]
+            if chunk_type == b"IEND":
+                break
+            i += 12 + length
+        return bytes(out)
+    raise ValueError("Only JPEG and PNG images are supported.")
+
+# Image preprocessing (resize, flatten alpha, encode as base64 JPEG)
 def preprocess_image(image, provider_list, logger, image_requirements_config):
     """
     Resizes, converts, and formats a PIL image based on the strictest requirements
@@ -183,9 +329,9 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         max_edge_candidates = [req.get('max_edge', float('inf')) for req in provider_requirements if req.get('max_edge', float('inf')) is not None]
         max_edge = min(max_edge_candidates) if max_edge_candidates else float('inf')
 
-        # Setting the required image format and media_type ('base64' and 'image/png')
+        # Output format: base64 JPEG by default (small enough to send inline; config can override)
         required_format = 'base64'
-        media_type = 'image/png'
+        media_type = next((req.get('media_type') for req in provider_requirements if req.get('media_type')), 'image/jpeg')
 
         # Reducing "max_size_mb" by 30% to account for base64 encoding overhead (minimum 1MB)
         max_size_mb = max(1, int(max_size_mb * 0.7))
@@ -194,12 +340,18 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
 
         img_copy = image.copy()
 
-        # --- Handle Non-RGB/RGBA Modes ---
-        if img_copy.mode not in ('RGB', 'RGBA'):
+        # --- Handle Non-RGB/RGBA Modes (JPEG cannot store alpha, so flatten RGBA onto white) ---
+        if img_copy.mode not in ('RGB', 'RGBA') or (img_copy.mode == 'RGBA' and 'jpeg' in media_type):
             logger.warning(f"Input image mode is '{img_copy.mode}'. Converting to 'RGB' for compatibility.")
             print(f"WARN: Converting image mode '{img_copy.mode}' to 'RGB'.")
             try:
-                img_copy = img_copy.convert('RGB')
+                if img_copy.mode == 'RGBA':
+                    background = PIL.Image.new('RGB', img_copy.size, (255, 255, 255))
+                    background.paste(img_copy, mask=img_copy.split()[3])
+                    background.info = img_copy.info  # keep the EXIF orientation for the transpose below
+                    img_copy = background
+                else:
+                    img_copy = img_copy.convert('RGB')
             except Exception as convert_e:
                 logger.error(f"Failed to convert image mode from {img_copy.mode} to RGB: {convert_e}", exc_info=True)
                 print(f"ERROR: Failed to convert image mode: {convert_e}")
@@ -212,6 +364,7 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         except Exception as exif_err:
             logger.warning(f"Could not apply EXIF transpose: {exif_err}")
             print(f"WARN: Could not apply EXIF transpose: {exif_err}")
+        img_copy.info = {}  # drop metadata (e.g. a JPEG comment) so none of it is written into the Gemini copy
 
         # --- Resizing Logic (Pixels, Edge, File Size) ---
         width, height = img_copy.size
@@ -240,7 +393,7 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         temp_buffer = BytesIO()
         save_format = 'PNG' if media_type and 'png' in media_type.lower() else 'JPEG'
         logger.info(f"Checking size using format: {save_format}")
-        quality = 95
+        quality = 90
 
         def get_image_size_bytes(img, buffer, fmt, qual=None):
             buffer.seek(0); buffer.truncate()
@@ -303,8 +456,7 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         return None
 
 # Google Gemini API call with structured output
-@retry_on_api_error
-def call_google_llm_structured_output_text(client, model_name, system_prompt, user_prompt_parts, response_schema, logger, model_pricing_config, temperature=1.0):
+def call_google_llm_structured_output_text(client, model_name, system_prompt, user_prompt_parts, response_schema, logger, model_pricing_config, call_kind="flashcards"):
     """
     Simplified version of the Google Gemini API call function for flashcard generation
     """
@@ -328,64 +480,46 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
                 contents.append(part_data)
                 logger.debug(f"Added text part to contents.")
             elif isinstance(part_data, dict) and part_data.get("type") == "base64":
-                base64_image = part_data['data']
-                media_type_from_dict = part_data.get('media_type')
-                
-                save_format = 'PNG'
-                mime_type_for_upload = 'image/png'
-
-                image_buffer = BytesIO()
-                image_buffer.write(base64.b64decode(base64_image))
-                image_buffer.seek(0)
-
-                display_name = f"uploaded_base64_image_{i}_{save_format.lower()}"
-                logger.info(f"Uploading Base64 image as {save_format} (MIME: {mime_type_for_upload}, Display: {display_name}) to File API...")
-                uploaded_file = client.files.upload(file=image_buffer, config={"mime_type": mime_type_for_upload, "display_name": display_name})
-                contents.append(uploaded_file)
-                logger.info(f"Image uploaded. File API URI: {uploaded_file.uri}, Name: {uploaded_file.name}")
+                # Send images inline (no Files API upload, nothing to clean up afterwards)
+                contents.append(google_types.Part.from_bytes(
+                    data=base64.b64decode(part_data["data"]),
+                    mime_type=part_data.get("media_type", "image/jpeg"),
+                ))
+                logger.debug(f"Added inline image part ({part_data.get('media_type', 'image/jpeg')}).")
             else:
                 logger.warning(f"Unknown part type in user_prompt_parts: {type(part_data)}. Skipping.")
         except Exception as e:
             logger.error(f"Error processing part {part_data}: {e}", exc_info=True)
             raise ValueError(f"Failed to process input part: {e}") from e
 
-    logger.info(f"Calling Google Model: {model_name} (Temp: {temperature}, JSON Output Schema: {response_schema.__name__})")
+    logger.info(f"Calling Google Model: {model_name} (call: {call_kind}, JSON Output Schema: {response_schema.__name__})")
     logger.debug(f"System Prompt Provided: {bool(system_prompt)}")
     logger.debug(f"Total Parts in Contents for API Call: {len(contents)}")
 
-    # Prepare Generation Config
-    generation_config_dict = {
-        "temperature": temperature,
-        "response_mime_type": "application/json",
-        "response_schema": response_schema,
-        "system_instruction": system_prompt
-    }
-
     try:
-        generation_config = google_types.GenerateContentConfig(**generation_config_dict)
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=generation_config
-        )
+        generation_config = build_generation_config(model_name, model_pricing_config, response_schema, system_prompt, call_kind)
+        response = client.models.generate_content(model=model_name, contents=contents, config=generation_config)
 
         processing_time = time.time() - start_time
 
         # Check for safety blocks or empty response
         if not response.candidates:
-            finish_reason = getattr(response, 'prompt_feedback', {}).get('block_reason', 'Unknown')
+            prompt_feedback = getattr(response, 'prompt_feedback', None)
+            block_reason = getattr(prompt_feedback, 'block_reason', None)
+            finish_reason = getattr(block_reason, 'name', None) or str(block_reason or 'Unknown')
             log_msg = f"Google API response for {model_name} has no candidates. Finish Reason: {finish_reason}"
             logger.error(log_msg)
             raise ValueError(f"Google API response blocked or empty. Reason: {finish_reason}")
+        if not response.text:
+            finish = getattr(response.candidates[0], 'finish_reason', None)
+            raise ValueError(f"Empty response from Gemini (finish_reason={getattr(finish, 'name', finish)}).")
 
         # Token/Cost calculation from response
         if hasattr(response, 'usage_metadata') and response.usage_metadata:
-             input_token_count = response.usage_metadata.prompt_token_count
-             output_token_count = response.usage_metadata.candidates_token_count
-
-             # Add thinking tokens if available
-             if response.usage_metadata.thoughts_token_count is not None:
-                output_token_count += response.usage_metadata.thoughts_token_count
+             usage = response.usage_metadata
+             input_token_count = usage.prompt_token_count or 0
+             # Thinking tokens are billed at the output rate
+             output_token_count = (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
 
              token_source = "api_metadata"
              logger.info(f"Tokens from Google API metadata: Input={input_token_count}, Output={output_token_count}")
@@ -395,7 +529,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
         # Calculate cost (robust pricing model support)
         try:
-            pricing_config = model_pricing_config.get("pricing", {}).get("google", {}).get("models", {}).get(model_name, {})
+            pricing_config = resolve_model_pricing(get_google_model_info(model_pricing_config, model_name))
             
             if not pricing_config:
                 logger.warning(f"No pricing config found for model: {model_name}")
@@ -441,9 +575,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
         # Parse JSON response
         try:
-            result_json_str = response.text.strip()
-            parsed_data = json.loads(result_json_str)
-            response_schema.model_validate(parsed_data)
+            parsed_data = response_schema.model_validate_json(response.text).model_dump()
             
             logger.info(f"API Call Complete - Model: {model_name}, Tokens: {input_token_count} in/{output_token_count} out, Cost: ${cost:.6f}, Time: {processing_time:.1f}s")
             
@@ -461,40 +593,33 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
             logger.error(f"Failed to parse or validate Google JSON response: {json_e}")
             raise ValueError(f"Invalid JSON/Schema response from Google API.") from json_e
 
-    except google_exceptions.GoogleAPIError as e:
-        is_retryable = should_retry_api_call(e)
-        log_level = logging.WARNING if is_retryable else logging.ERROR
-        error_message = f"Google API Error ({model_name}): {type(e).__name__} - Code: {getattr(e, 'code', 'N/A')} - {e}"
-        logger.log(log_level, error_message)
-        
-        if not is_retryable:
-             return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count, 
-                    "cost": cost, "token_source": token_source, "error": str(e)}
-        else:
-             raise
+    except genai_errors.APIError as e:
+        # The SDK has already retried 408/429/5xx (see build_genai_client); report the final error.
+        logger.error(f"Gemini API error ({model_name}): {e.code} {e.status} - {e.message}")
+        error_text = f"Gemini API error {e.code} {e.status}: {e.message}"
+        # Preview (paid-only) and legacy (2.5, limited access) models explain the likely cause of a 4xx
+        access_note = get_google_model_info(model_pricing_config, model_name).get("access_note")
+        if access_note and 400 <= (e.code or 0) < 500:
+            error_text += f" Note: {access_note}"
+        return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count,
+                "cost": cost, "token_source": token_source, "error": error_text}
 
     except Exception as e:
         logger.error(f"Unexpected error calling Google API ({model_name}): {e}", exc_info=True)
-        return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count, 
+        return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count,
                "cost": cost, "token_source": token_source, "error": str(e)}
-    
-    finally:
-        # Delete uploaded files from Gemini Files API Server
-        try:
-            for file in client.files.list():
-                client.files.delete(name=file.name)
-        except Exception as cleanup_e:
-            logger.warning(f"Failed to cleanup uploaded files: {cleanup_e}")
 
 # Function to generate Japanese flashcards from uploaded images
-def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-flash", prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json", custom_instructions="", gemini_api_key=None, llmwhisperer_api_key=None, llmwhisperer_base_url=None):
+def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json", custom_instructions="", gemini_api_key=None, llmwhisperer_api_key=None, llmwhisperer_base_url=None):
     """
     For each uploaded image file:
       1) Check if the image is suitable for flashcard generation using Gemini.
       2) If suitable, extract text (OCR) via LLMWhisperer, then generate flashcards.
     Returns a string containing all flashcards from all suitable images, processing notes, and total stats.
     """
-    
+    if len(uploaded_images) > MAX_FILES_PER_RUN:
+        raise ValueError(f"Please upload at most {MAX_FILES_PER_RUN} images per run.")
+
     # Setup logging and load configuration
     logger = setup_console_logger()
     try:
@@ -530,7 +655,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
         if not is_local_dev:
             try:
                 secrets = getattr(st, "secrets", {})
-                if "LLMWHISPERER_API_KEY" in secrets:    
+                if "LLMWHISPERER_API_KEY" in secrets:
                     os.environ["LLMWHISPERER_API_KEY"] = secrets["LLMWHISPERER_API_KEY"]
             except Exception as e:
                 logger.warning(f"Could not access Streamlit secrets: {e}")
@@ -548,7 +673,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     os.environ["LLMWHISPERER_BASE_URL_V2"] = secrets["LLMWHISPERER_BASE_URL_V2"]
             except Exception as e:
                 logger.warning(f"Could not access Streamlit secrets: {e}")
-        final_llmwhisperer_base_url = os.getenv("LLMWHISPERER_BASE_URL_V2")
+        final_llmwhisperer_base_url = os.getenv("LLMWHISPERER_BASE_URL_V2") or LLMWHISPERER_DEFAULT_BASE_URL
 
     # Validate API keys
     if not final_gemini_api_key:
@@ -560,7 +685,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
 
     # Initialize Google GenAI client
     try:
-        client = genai.Client(api_key=final_gemini_api_key)
+        client = build_genai_client(final_gemini_api_key)
         model_name = selected_model
         logger.info(f"Initialized Google GenAI client with model: {model_name}")
     except Exception as e:
@@ -649,7 +774,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
         
         try:
             # Convert uploaded file to PIL image
-            pil_image = PIL.Image.open(uploaded_file)
+            pil_image = open_uploaded_image(uploaded_file)
             logger.info(f"Image #{idx}: Loaded PIL image {pil_image.size}")
         except Exception as e:
             msg = f"Image #{idx}: Error opening file - {e}"
@@ -688,7 +813,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                 response_schema=SuitabilityResponse,
                 logger=logger,
                 model_pricing_config=model_config,
-                temperature=0.1
+                call_kind="suitability"
             )
             
             if suitability_result["error"]:
@@ -722,8 +847,10 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
         try:
             logger.info(f"Image #{idx}: Extracting text via OCR...")
             uploaded_file.seek(0)
-            image_bytes = BytesIO(uploaded_file.read())
-            result = llm_whisper_client.whisper(stream=image_bytes, wait_for_completion=True)
+            image_bytes = BytesIO(strip_image_metadata(uploaded_file.read(), pil_image.getexif().get(0x0112, 1)))  # same image data, no EXIF/GPS
+            result = llm_whisper_client.whisper(stream=image_bytes, mode="form", output_mode="layout_preserving", wait_for_completion=True)
+            if result.get("status_code") != 200 or "result_text" not in result.get("extraction", {}):
+                raise ValueError(f"LLMWhisperer did not return text (status {result.get('status_code')}: {result.get('message', 'no message')})")
             extracted_text = result["extraction"]["result_text"]
             logger.info(f"Image #{idx}: Extracted {len(extracted_text)} characters via OCR")
         except Exception as e:
@@ -773,7 +900,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     response_schema=FlashcardResponse,
                     logger=logger,
                     model_pricing_config=model_config,
-                    temperature=1.0
+                    call_kind="flashcards"
                 )
                 
                 if flashcard_result["error"]:
@@ -813,7 +940,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     response_schema=KanjiFlashcardResponse,
                     logger=logger,
                     model_pricing_config=model_config,
-                    temperature=1.0
+                    call_kind="flashcards"
                 )
                 
                 if flashcard_result["error"]:
@@ -856,7 +983,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     response_schema=GrammarFlashcardResponse,
                     logger=logger,
                     model_pricing_config=model_config,
-                    temperature=1.0
+                    call_kind="flashcards"
                 )
                 
                 if flashcard_result["error"]:
@@ -928,10 +1055,10 @@ def main():
         bordered_img = PIL.ImageOps.expand(img, border=5, fill='#333333')
         
         # Display the image with border
-        st.image(bordered_img, use_container_width=True)
+        st.image(bordered_img, width="stretch")
     except Exception as e:
         # Fallback to display without border if there's an error
-        st.image("Flashcard_App_Image_2.jpeg", use_container_width=True)
+        st.image("Flashcard_App_Image_2.jpeg", width="stretch")
 
     # Displaying a short description of the app
     st.markdown("""
@@ -981,7 +1108,7 @@ def main():
     1. **API Setup**: Enter your Google Gemini and LLMWhisperer API keys below
     2. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary, Kanji, or Grammar)
     3. **Custom Instructions**: Optionally add specific instructions to guide the AI's processing (e.g., "Focus on business vocabulary" or "Include more context")
-    4. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
+    4. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG; up to 10 images, 20 MB each)
     5. **Suitability Check**: AI assesses if images contain suitable Japanese content
     6. **Text Extraction**: LLMWhisperer OCR extracts text from images
     7. **AI Processing**: Gemini models cross-reference OCR text with original images, following your custom instructions
@@ -1079,17 +1206,25 @@ def main():
     # Load model configuration for dropdown options
     try:
         model_config = load_model_config()
-        google_models = list(model_config.get("pricing", {}).get("google", {}).get("models", {}).keys())
-    except:
-        google_models = ["gemini-2.0-flash"]  # Fallback
-    
+        google_model_info = model_config.get("pricing", {}).get("google", {})
+        google_models = list(google_model_info.get("models", {}).keys()) or [DEFAULT_MODEL]
+        default_model = google_model_info.get("default_model", DEFAULT_MODEL)
+    except (OSError, ValueError) as e:
+        st.warning(f"Could not read model_information.json ({e}); using {DEFAULT_MODEL}.")
+        google_model_info, google_models, default_model = {}, [DEFAULT_MODEL], DEFAULT_MODEL
+
     # Model selection dropdown
     selected_model = st.selectbox(
         "Select Gemini Model",
         options=google_models,
-        index=google_models.index("gemini-2.0-flash") if "gemini-2.0-flash" in google_models else 0,
-        help="Choose which Gemini model to use for flashcard generation"
+        index=google_models.index(default_model) if default_model in google_models else 0,
+        format_func=lambda m: google_model_info.get("models", {}).get(m, {}).get("label", m),
+        help="Choose which Gemini model to use for flashcard generation. Preview models need a paid (billing-enabled) key. "
+             "Legacy (Gemini 2.5) models: Google now limits these to keys that have used them before; with a new key, pick a Gemini 3 model."
     )
+    access_note = google_model_info.get("models", {}).get(selected_model, {}).get("access_note")
+    if access_note:
+        st.caption(access_note)
     
     # Prompt template selection
     prompt_template = st.selectbox(
@@ -1146,7 +1281,8 @@ def main():
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
         disabled=not api_keys_provided or bool(api_key_errors),
-        help="Upload images after entering valid API keys above" if not api_keys_provided or api_key_errors else "Upload your textbook images here"
+        help="Upload images after entering valid API keys above" if not api_keys_provided or api_key_errors else "Upload your textbook images here",
+        max_upload_size=MAX_UPLOAD_MB
     )
 
     # Button to initiate flashcard generation
@@ -1157,6 +1293,8 @@ def main():
             st.error("❌ Please fix the API key validation errors above before generating flashcards.")
         elif not uploaded_images:
             st.warning("Please upload at least one image.")
+        elif len(uploaded_images) > MAX_FILES_PER_RUN:
+            st.error(f"Please upload at most {MAX_FILES_PER_RUN} images per run (you selected {len(uploaded_images)}).")
         else:
             with st.spinner("Processing..."):
                 try:
@@ -1181,11 +1319,16 @@ def main():
 
                     # If we have at least some flashcards, show a download button
                     if flashcards_str.strip():
+                        columns = CARD_COLUMNS[prompt_template]
+                        rows = flashcards_csv_to_rows(flashcards_str)
+                        st.subheader(f"Generated flashcards ({len(rows)})")
+                        st.dataframe([dict(zip(columns, row)) for row in rows], hide_index=True, width="stretch")
                         st.download_button(
                             label="Download Flashcards",
                             data=flashcards_str,
                             file_name="generated_flashcards.txt",
-                            mime="text/plain"
+                            mime="text/plain",
+                            on_click="ignore"  # keep the results on screen after downloading
                         )
                     else:
                         st.warning("No flashcards were generated from the uploaded images.")
