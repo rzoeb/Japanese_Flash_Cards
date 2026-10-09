@@ -1,9 +1,8 @@
-# Third-party dependencies
-streamlit>=1.32.0
-google-genai>=0.2.0
-google-api-core
-Pillow>=10.0.0
-python-dotenv>=1.0.0
-llmwhisperer-client>=0.1.0
-pydantic>=2.0.0
-tenacity>=8.0.0
+# Third-party dependencies (exact pins; Python 3.12 recommended, 3.10+ supported)
+streamlit==1.65.0
+google-genai==2.28.0
+Pillow==12.3.0
+pydantic==2.13.5
+python-dotenv==1.2.4
+llmwhisperer-client==2.9.1; python_version >= "3.12"
+llmwhisperer-client==2.3.1; python_version < "3.12"
