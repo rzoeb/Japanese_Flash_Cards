@@ -36,49 +36,59 @@
         },
         "google": {
             "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+            "checked": "2026-10-08",
+            "notes": "USD per 1M tokens, Standard paid tier. Output prices include thinking tokens. Shutdown dates and access limits: https://ai.google.dev/gemini-api/docs/deprecations",
+            "default_model": "gemini-3.8-flash",
             "models": {
-                "gemini-2.5-flash": {
+                "gemini-3.8-flash": {
+                    "label": "Gemini 3.8 Flash (default)",
+                    "family": "gemini-3",
+                    "thinking_levels": {"suitability": "medium", "flashcards": "medium"},
+                    "input": 0.75,
+                    "output": 3.75,
+                    "price_changes": [{"effective_from": "2027-01-01", "input": 1.5, "output": 7.5}]
+                },
+                "gemini-3.6-flash": {
+                    "label": "Gemini 3.6 Flash",
+                    "family": "gemini-3",
+                    "thinking_levels": {"suitability": "medium", "flashcards": "medium"},
+                    "input": 0.75,
+                    "output": 3.75,
+                    "price_changes": [{"effective_from": "2027-01-01", "input": 1.5, "output": 7.5}]
+                },
+                "gemini-3.5-flash-lite": {
+                    "label": "Gemini 3.5 Flash-Lite (budget)",
+                    "family": "gemini-3",
+                    "thinking_levels": {"suitability": "minimal", "flashcards": "minimal"},
                     "input": 0.3,
-                    "input_audio": 1.0,
                     "output": 2.5
                 },
-                "gemini-2.5-pro": {
-                    "input_less_than_200k_prompt": 1.25,
-                    "output_less_than_200k_prompt": 10.0,
-                    "input_greater_than_200k_prompt": 2.5,
-                    "output_greater_than_200k_prompt": 15.0
+                "gemini-3.1-pro-preview": {
+                    "label": "Gemini 3.1 Pro (preview, paid keys only)",
+                    "family": "gemini-3",
+                    "access_note": "Preview model: needs a paid (billing-enabled) Gemini key, and Google may retire it at 2 weeks' notice.",
+                    "thinking_levels": {"suitability": "high", "flashcards": "high"},
+                    "input_less_than_200k_prompt": 2.0,
+                    "output_less_than_200k_prompt": 12.0,
+                    "input_greater_than_200k_prompt": 4.0,
+                    "output_greater_than_200k_prompt": 18.0
                 },
                 "gemini-2.5-flash-lite": {
+                    "label": "Gemini 2.5 Flash-Lite (legacy, cheapest)",
+                    "family": "gemini-2.5",
+                    "access_note": "Legacy model: Google now limits Gemini 2.5 to keys that have used it before. With a new key, pick a Gemini 3 model.",
                     "input": 0.1,
                     "input_audio": 0.3,
                     "output": 0.4
                 },
-                "gemini-2.0-flash": {
-                    "input": 0.1,
-                    "input_audio": 0.7,
-                    "output": 0.4
-                },
-                "gemini-2.0-flash-lite": {
-                    "input": 0.075,
-                    "output": 0.3
-                },
-                "gemini-1.5-flash-latest": {
-                    "input_less_than_128k_prompt": 0.075,
-                    "output_less_than_128k_prompt": 0.3,
-                    "input_greater_than_128k_prompt": 0.15,
-                    "output_greater_than_128k_prompt": 0.6
-                },
-                "gemini-1.5-flash-8b-latest": {
-                    "input_less_than_128k_prompt": 0.0375,
-                    "output_less_than_128k_prompt": 0.15,
-                    "input_greater_than_128k_prompt": 0.075,
-                    "output_greater_than_128k_prompt": 0.3
-                },
-                "gemini-1.5-pro-latest": {
-                    "input_less_than_128k_prompt": 1.25,
-                    "output_less_than_128k_prompt": 5.0,
-                    "input_greater_than_128k_prompt": 2.5,
-                    "output_greater_than_128k_prompt": 10.0
+                "gemini-2.5-pro": {
+                    "label": "Gemini 2.5 Pro (legacy)",
+                    "family": "gemini-2.5",
+                    "access_note": "Legacy model: Google now limits Gemini 2.5 to keys that have used it before. With a new key, pick a Gemini 3 model.",
+                    "input_less_than_200k_prompt": 1.25,
+                    "output_less_than_200k_prompt": 10.0,
+                    "input_greater_than_200k_prompt": 2.5,
+                    "output_greater_than_200k_prompt": 15.0
                 }
             }
         },
@@ -199,12 +209,12 @@
     },
     "image_requirements": {
         "google": {
-            "source_url": "https://ai.google.dev/gemini-api/docs/vision?lang=python",
+            "source_url": "https://ai.google.dev/gemini-api/docs/image-understanding",
             "max_pixels": 150000000,
-            "max_size_mb": 20,
+            "max_size_mb": 4,
             "format": "base64",
-            "max_edge": null,
-            "media_type": "image/png"
+            "max_edge": 3072,
+            "media_type": "image/jpeg"
         },
         "anthropic": {
             "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/vision",
@@ -317,41 +327,6 @@
                     "tpm": 4000000,
                     "rpd": null,
                     "max_output_tokens_request": 64000
-                },
-                "gemini-2.0-flash": {
-                    "context_window_tokens": 1048576,
-                    "rpm": 2000,
-                    "tpm": 4000000,
-                    "rpd": null,
-                    "max_output_tokens_request": 8192
-                },
-                "gemini-2.0-flash-lite": {
-                    "context_window_tokens": 1048576,
-                    "rpm": 4000,
-                    "tpm": 4000000,
-                    "rpd": null,
-                    "max_output_tokens_request": 8192
-                },
-                "gemini-1.5-flash-latest": {
-                    "context_window_tokens": 1048576,
-                    "rpm": 2000,
-                    "tpm": 4000000,
-                    "rpd": null,
-                    "max_output_tokens_request": 8192
-                },
-                "gemini-1.5-flash-8b-latest": {
-                    "context_window_tokens": 1048576,
-                    "rpm": 4000,
-                    "tpm": 4000000,
-                    "rpd": null,
-                    "max_output_tokens_request": 8192
-                },
-                "gemini-1.5-pro-latest": {
-                    "context_window_tokens": 2097152,
-                    "rpm": 1000,
-                    "tpm": 4000000,
-                    "rpd": null,
-                    "max_output_tokens_request": 8192
                 }
             }
         },
@@ -652,77 +627,6 @@
             "supports_function_calling": true,
             "supported_built_in_tools": ["code_execution", "google_url_context", "google_search_grounding"],
             "supports_extended_thinking": true
-        },
-        "gemini-2.0-flash": {
-            "description": "Fast, multimodal model optimized for speed and efficiency (potentially).",
-            "use_cases": [
-                "Real-time interaction",
-                "Summarization",
-                "Basic vision tasks"
-            ],
-            "input_types": ["text", "base64-image/png", "video", "audio", "document", "youtube"],
-            "output_types": ["text"],
-            "hyperparameters": ["max_output_tokens", "temperature", "top_p", "top_k", "presence_penalty", "frequency_penalty"],
-            "supports_function_calling": true,
-            "supported_built_in_tools": ["code_execution", "google_url_context", "google_search_grounding"],
-            "supports_extended_thinking": false
-        },
-        "gemini-2.0-flash-lite": {
-            "description": "Even lighter version of Gemini 2.0 Flash (potentially).",
-            "use_cases": [
-                "High-throughput tasks",
-                "Mobile applications",
-                "Cost-sensitive scenarios"
-            ],
-            "input_types": ["text", "base64-image/png", "video", "audio", "document", "youtube"],
-            "output_types": ["text"],
-            "hyperparameters": ["max_output_tokens", "temperature", "top_p", "top_k", "presence_penalty", "frequency_penalty"],
-            "supports_function_calling": true,
-            "supported_built_in_tools": [],
-            "supports_extended_thinking": false
-        },
-        "gemini-1.5-flash-latest": {
-            "description": "Fast, efficient model balancing speed and capability, large context window.",
-            "use_cases": [
-                "Summarization",
-                "Chatbots",
-                "Data extraction",
-                "Captioning"
-            ],
-            "input_types": ["text", "base64-image/png", "video", "audio", "document", "youtube"],
-            "output_types": ["text"],
-            "hyperparameters": ["max_output_tokens", "temperature", "top_p", "top_k", "presence_penalty", "frequency_penalty"],
-            "supports_function_calling": true,
-            "supported_built_in_tools": ["code_execution"],
-            "supports_extended_thinking": false
-        },
-        "gemini-1.5-flash-8b-latest": {
-            "description": "Smaller 8B parameter version of Flash, very fast (potentially).",
-            "use_cases": [
-                "Latency-sensitive tasks",
-                "On-device potential"
-            ],
-            "input_types": ["text", "base64-image/png", "video", "audio", "document", "youtube"],
-            "output_types": ["text"],
-            "hyperparameters": ["max_output_tokens", "temperature", "top_p", "top_k", "presence_penalty", "frequency_penalty"],
-            "supports_function_calling": true,
-            "supported_built_in_tools": ["code_execution"],
-            "supports_extended_thinking": false
-        },
-        "gemini-1.5-pro-latest": {
-            "description": "Highly capable multimodal model, very large context window, strong reasoning.",
-            "use_cases": [
-                "Complex reasoning",
-                "Multimodal understanding",
-                "Code generation",
-                "Long-context analysis"
-            ],
-            "input_types": ["text", "base64-image/png", "video", "audio", "document", "youtube"],
-            "output_types": ["text"],
-            "hyperparameters": ["max_output_tokens", "temperature", "top_p", "top_k", "presence_penalty", "frequency_penalty"],
-            "supports_function_calling": true,
-            "supported_built_in_tools": ["code_execution"],
-            "supports_extended_thinking": false
         },
         "gpt-4.5-preview": {
             "description": "Preview model, likely successor to GPT-4 Turbo/GPT-4o.",
