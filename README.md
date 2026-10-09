@@ -2,6 +2,8 @@
 
 An advanced tool that automates the creation of Japanese language Anki flashcards from textbook images using cutting-edge AI technology, including Google's Gemini language models and OCR processing.
 
+**Try it:** https://japaneseflashcardspublic.streamlit.app/ (bring your own Gemini and LLMWhisperer keys)
+
 ## Overview
 
 This application extracts Japanese vocabulary and Kanji from textbook images and generates properly formatted flashcards that can be imported into Anki or similar spaced repetition systems. It combines OCR technology with Google's Gemini language models to extract, verify, and format content into ready-to-import flashcards with advanced AI-powered processing.
@@ -19,6 +21,22 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 - **Real-time Statistics**: Track processing costs, token usage, and generation time
 - **Advanced Error Handling**: Robust retry logic for API failures and rate limiting
 - **Image Preprocessing**: Automatic image optimization for different model requirements
+
+### Models
+
+The app's model dropdown offers these Gemini models:
+- `gemini-3.8-flash`: Gemini 3.8 Flash (default)
+- `gemini-3.6-flash`: Gemini 3.6 Flash
+- `gemini-3.5-flash-lite`: Gemini 3.5 Flash-Lite (budget)
+- `gemini-3.1-pro-preview`: Gemini 3.1 Pro (preview, paid keys only)
+- `gemini-2.5-flash-lite`: Gemini 2.5 Flash-Lite (legacy, cheapest)
+- `gemini-2.5-pro`: Gemini 2.5 Pro (legacy)
+
+Notes:
+- Gemini 3.1 Pro is a preview model: paid keys only, and it can be retired at short notice.
+- Gemini 2.5 models are legacy: Google now limits them to keys that have used them before.
+- Prices, shutdown dates and access checked 8 Oct 2026; see https://ai.google.dev/gemini-api/docs/deprecations
+- Cost readout uses Standard paid-tier list prices, including thinking tokens; free-tier keys are not billed.
 
 ## Supported Flashcard Types
 
@@ -65,7 +83,6 @@ This application extracts Japanese vocabulary and Kanji from textbook images and
 - `base64_example_images.json` - Example images encoded in base64 format for enhanced processing accuracy
 - `requirements.txt` - Updated Python dependencies including Google GenAI SDK and Pydantic
 - Sample images: `Flashcard_App_Image_1.jpg` and `Flashcard_App_Image_2.jpeg`
-- `unstract_multiple_llm_text_image.py` - Advanced image preprocessing utilities
 
 ## Setup and Installation
 
@@ -148,7 +165,7 @@ For advanced users who want to customize the processing logic, modify prompts, o
    # Generate flashcards with custom settings
    flashcards, notes, stats = generate_japanese_flashcards(
        uploaded_images=images,
-       selected_model="gemini-2.0-flash",
+       selected_model="gemini-3.8-flash",
        prompt_template="Vocabulary",
        use_examples=True
    )
@@ -162,13 +179,13 @@ This approach allows for complete customization of the flashcard generation proc
 
 1. **Configuration**: Select your preferred Gemini model and flashcard type (Vocabulary, Kanji, or Grammar)
 2. **Custom Instructions**: Optionally add specific instructions to guide the AI's processing according to your learning needs
-3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG)
+3. **Image Upload**: Upload Japanese textbook page images (JPG, JPEG, PNG; up to 10 images, 20 MB each)
 4. **Suitability Check**: AI assesses if images contain suitable Japanese content for flashcard generation
 5. **Text Extraction**: LLMWhisperer OCR API extracts text from images with high accuracy
 6. **AI Processing**: Gemini models cross-reference OCR text with original images using advanced prompts and your custom instructions
 7. **Smart Detection**: Automatically identifies highlighted, emphasized, or colored text as priority content
 8. **Flashcard Generation**: Creates structured flashcard data using specialized prompts and Pydantic validation
-9. **Statistics & Export**: View processing metrics and download results in Anki-compatible CSV format
+9. **Statistics & Export**: View processing metrics, preview the cards in a table and download them in Anki-compatible CSV format
 
 ## Advanced Features
 
@@ -184,15 +201,13 @@ This approach allows for complete customization of the flashcard generation proc
 
 The application requires the following Python packages:
 - `streamlit` - For the advanced web application interface with model selection
-- `google-genai>=0.2.0` - Latest Google GenAI SDK for Gemini API access with structured output
+- `google-genai` - Google GenAI SDK for Gemini API access (structured output, built-in retries)
 - `Pillow` - For comprehensive image processing and optimization
-- `python-dotenv` - For secure environment variable management
-- `unstract-llmwhisperer` - For high-accuracy OCR capabilities via the LLMWhisperer API
 - `pydantic` - For robust data validation and structured output schemas
-- `tenacity` - For intelligent retry logic and error handling
-- `typing` - For enhanced type hints and validation
+- `python-dotenv` - For secure environment variable management
+- `llmwhisperer-client` - For high-accuracy OCR capabilities via the LLMWhisperer API
 
-All dependencies with specific version requirements are listed in the requirements.txt file.
+Exact versions are pinned in `requirements.txt`.
 
 ## Use Cases
 
@@ -207,7 +222,7 @@ All dependencies with specific version requirements are listed in the requiremen
 
 ## System Requirements
 
-- **Python**: 3.8+ (3.10+ recommended for optimal performance)
+- **Python**: 3.10+ (3.12 recommended; matches Streamlit Community Cloud's default)
 - **Google Gemini API**: Access to Google's Gemini models (Flash, Pro, etc.)
 - **LLMWhisperer API**: Access for high-accuracy OCR processing
 - **Memory**: Minimum 4GB RAM (8GB recommended for processing multiple large images)
@@ -246,8 +261,9 @@ The .env file containing API keys and configuration secrets is excluded from ver
 ## Recent Updates
 
 This version includes major enhancements:
+- Oct 2026: Gemini 3.x models (default `gemini-3.8-flash`), SDK-native retries, inline images, upload hardening, cards table, pinned dependencies, automated tests; photo metadata such as GPS location is removed before images are sent for OCR
 - Migration to Google GenAI SDK with structured output capabilities
-- Dual-mode flashcard generation (Vocabulary and Kanji)
+- Three modes (Vocabulary, Kanji, Grammar)
 - Advanced model selection and configuration options
 - Real-time cost and performance tracking
 - Enhanced error handling and retry logic
