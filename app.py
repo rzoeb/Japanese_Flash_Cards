@@ -19,6 +19,7 @@ import logging
 from pydantic import BaseModel, Field
 from typing import List
 import time
+import zlib
 
 # Prompt templates
 from LLM_Prompts import (
@@ -221,6 +222,70 @@ def open_uploaded_image(uploaded_file, target_edge=3072):
     img.load()
     return img
 
+# Photo metadata: what the OCR service may receive besides the image data itself
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_KEEP_CHUNKS = {b"IHDR", b"PLTE", b"tRNS", b"IDAT", b"IEND", b"gAMA", b"cHRM", b"sRGB", b"iCCP", b"sBIT", b"pHYs", b"bKGD"}
+
+def orientation_only_exif(orientation):
+    """EXIF block (the "Exif" header plus TIFF data) holding only the orientation tag."""
+    exif = PIL.Image.Exif()
+    exif[0x0112] = orientation
+    return exif.tobytes()
+
+def strip_image_metadata(data, orientation=1):
+    """Remove EXIF (incl. GPS), XMP, comments and appended data from JPEG/PNG bytes without touching the image data.
+
+    The compressed image data is copied byte for byte, so the decoded pixels are identical. The colour profile (ICC),
+    the Adobe colour-transform segment and the orientation (as the only EXIF tag) are kept.
+    """
+    keep_orientation = orientation in range(2, 9)
+    if data[:2] == b"\xff\xd8":  # JPEG
+        out, i, exif_written = bytearray(data[:2]), 2, False
+        while i + 1 < len(data):
+            if data[i] != 0xFF or data[i + 1] == 0xFF:
+                i += 1  # stray or fill byte between segments (Pillow skips these too)
+                continue
+            marker = data[i + 1]
+            if 0xD0 <= marker <= 0xD7 or marker == 0x01:  # standalone markers have no length field
+                out += data[i:i + 2]
+                i += 2
+                continue
+            if marker == 0xDA:  # start of scan: copy the image data up to and including EOI; drop anything appended
+                end = data.find(b"\xff\xd9", i + 2)
+                return bytes(out + (data[i:end + 2] if end != -1 else data[i:]))
+            length = int.from_bytes(data[i + 2:i + 4], "big")
+            segment, payload = data[i:i + 2 + length], data[i + 4:i + 2 + length]
+            if marker == 0xE1 and payload.startswith(b"Exif\x00\x00"):
+                if keep_orientation and not exif_written:
+                    exif_bytes = orientation_only_exif(orientation)
+                    out += b"\xff\xe1" + (len(exif_bytes) + 2).to_bytes(2, "big") + exif_bytes
+                    exif_written = True
+            elif 0xE0 <= marker <= 0xEF or marker == 0xFE:  # APPn and COM: keep only what affects decoding
+                if (marker == 0xE0
+                        or (marker == 0xE2 and payload.startswith(b"ICC_PROFILE\x00"))
+                        or (marker == 0xEE and payload.startswith(b"Adobe"))):
+                    out += segment
+            else:
+                out += segment  # quantisation/Huffman tables, frame header, restart interval
+            i += 2 + length
+        raise ValueError("JPEG has no image data.")
+    if data[:8] == PNG_SIGNATURE:
+        out, i, exif_written = bytearray(PNG_SIGNATURE), 8, False
+        while i + 8 <= len(data):
+            length = int.from_bytes(data[i:i + 4], "big")
+            chunk_type = data[i + 4:i + 8]
+            if chunk_type == b"IDAT" and keep_orientation and not exif_written:
+                tiff = orientation_only_exif(orientation)[6:]  # PNG's eXIf chunk holds the TIFF data without the "Exif" header
+                out += len(tiff).to_bytes(4, "big") + b"eXIf" + tiff + zlib.crc32(b"eXIf" + tiff).to_bytes(4, "big")
+                exif_written = True
+            if chunk_type in PNG_KEEP_CHUNKS:
+                out += data[i:i + 12 + length]
+            if chunk_type == b"IEND":
+                break
+            i += 12 + length
+        return bytes(out)
+    raise ValueError("Only JPEG and PNG images are supported.")
+
 # Image preprocessing (resize, flatten alpha, encode as base64 JPEG)
 def preprocess_image(image, provider_list, logger, image_requirements_config):
     """
@@ -264,6 +329,7 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
                 if img_copy.mode == 'RGBA':
                     background = PIL.Image.new('RGB', img_copy.size, (255, 255, 255))
                     background.paste(img_copy, mask=img_copy.split()[3])
+                    background.info = img_copy.info  # keep the EXIF orientation for the transpose below
                     img_copy = background
                 else:
                     img_copy = img_copy.convert('RGB')
@@ -279,6 +345,7 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         except Exception as exif_err:
             logger.warning(f"Could not apply EXIF transpose: {exif_err}")
             print(f"WARN: Could not apply EXIF transpose: {exif_err}")
+        img_copy.info = {}  # drop metadata (e.g. a JPEG comment) so none of it is written into the Gemini copy
 
         # --- Resizing Logic (Pixels, Edge, File Size) ---
         width, height = img_copy.size
@@ -735,7 +802,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, 
         try:
             logger.info(f"Image #{idx}: Extracting text via OCR...")
             uploaded_file.seek(0)
-            image_bytes = BytesIO(uploaded_file.read())
+            image_bytes = BytesIO(strip_image_metadata(uploaded_file.read(), pil_image.getexif().get(0x0112, 1)))  # same image data, no EXIF/GPS
             result = llm_whisper_client.whisper(stream=image_bytes, mode="form", output_mode="layout_preserving", wait_for_completion=True)
             if result.get("status_code") != 200 or "result_text" not in result.get("extraction", {}):
                 raise ValueError(f"LLMWhisperer did not return text (status {result.get('status_code')}: {result.get('message', 'no message')})")
