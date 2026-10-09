@@ -3,7 +3,7 @@
 import streamlit as st
 from google import genai
 from google.genai import types as google_types
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors as genai_errors
 import PIL.Image
 from PIL import ImageOps
 import json
@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 import base64
 import logging
 from pydantic import BaseModel, Field
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from typing import List
 import time
 
@@ -114,31 +113,23 @@ def convert_flashcard_response_to_csv(flashcard_response):
     
     return "\n".join(csv_lines)
 
-# Retry logic for API errors
-def should_retry_api_call(exception):
-    """Determine if API call should be retried based on exception type"""
-    retryable_exceptions = [
-        google_exceptions.ResourceExhausted,
-        google_exceptions.ServiceUnavailable, 
-        google_exceptions.InternalServerError,
-        google_exceptions.DeadlineExceeded
-    ]
-    
-    if isinstance(exception, tuple(retryable_exceptions)):
-        return True
-        
-    # Check status codes
-    if hasattr(exception, 'code'):
-        retryable_codes = [8, 13, 14, 4]  # gRPC codes for rate limit, internal, unavailable, deadline
-        return exception.code in retryable_codes
-    
-    return False
+# Gemini client helpers
+RETRYABLE_HTTP_CODES = [408, 429, 500, 502, 503, 504]
 
-retry_on_api_error = retry(
-    wait=wait_exponential(multiplier=1, min=4, max=60),
-    stop=stop_after_attempt(5),
-    retry=retry_if_exception(should_retry_api_call)
-)
+def build_genai_client(api_key):
+    """Gemini client with the SDK's built-in retries (the SDK does NOT retry unless retry_options is set)."""
+    return genai.Client(
+        api_key=api_key,
+        http_options=google_types.HttpOptions(
+            timeout=180_000,  # milliseconds
+            retry_options=google_types.HttpRetryOptions(
+                attempts=4,  # 1 call + 3 retries
+                initial_delay=2.0,
+                max_delay=30.0,
+                http_status_codes=RETRYABLE_HTTP_CODES,
+            ),
+        ),
+    )
 
 # Image preprocessing function from unstract_multiple_llm_text_image.py
 def preprocess_image(image, provider_list, logger, image_requirements_config):
@@ -284,7 +275,6 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         return None
 
 # Google Gemini API call with structured output
-@retry_on_api_error
 def call_google_llm_structured_output_text(client, model_name, system_prompt, user_prompt_parts, response_schema, logger, model_pricing_config, temperature=1.0):
     """
     Simplified version of the Google Gemini API call function for flashcard generation
@@ -442,17 +432,12 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
             logger.error(f"Failed to parse or validate Google JSON response: {json_e}")
             raise ValueError(f"Invalid JSON/Schema response from Google API.") from json_e
 
-    except google_exceptions.GoogleAPIError as e:
-        is_retryable = should_retry_api_call(e)
-        log_level = logging.WARNING if is_retryable else logging.ERROR
-        error_message = f"Google API Error ({model_name}): {type(e).__name__} - Code: {getattr(e, 'code', 'N/A')} - {e}"
-        logger.log(log_level, error_message)
-        
-        if not is_retryable:
-             return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count, 
-                    "cost": cost, "token_source": token_source, "error": str(e)}
-        else:
-             raise
+    except genai_errors.APIError as e:
+        # The SDK has already retried 408/429/5xx (see build_genai_client); report the final error.
+        logger.error(f"Gemini API error ({model_name}): {e.code} {e.status} - {e.message}")
+        error_text = f"Gemini API error {e.code} {e.status}: {e.message}"
+        return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count,
+                "cost": cost, "token_source": token_source, "error": error_text}
 
     except Exception as e:
         logger.error(f"Unexpected error calling Google API ({model_name}): {e}", exc_info=True)
@@ -515,7 +500,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
 
     # Initialize Google GenAI client
     try:
-        client = genai.Client(api_key=gemini_api_key)
+        client = build_genai_client(gemini_api_key)
         model_name = selected_model
         logger.info(f"Initialized Google GenAI client with model: {model_name}")
     except Exception as e:
