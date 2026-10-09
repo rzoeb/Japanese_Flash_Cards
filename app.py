@@ -4,6 +4,7 @@ import streamlit as st
 from google import genai
 from google.genai import types as google_types
 from google.genai import errors as genai_errors
+import datetime
 import PIL.Image
 from PIL import ImageOps
 import json
@@ -113,7 +114,8 @@ def convert_flashcard_response_to_csv(flashcard_response):
     
     return "\n".join(csv_lines)
 
-# Gemini client helpers
+# Defaults and Gemini client helpers
+DEFAULT_MODEL = "gemini-3.8-flash"
 RETRYABLE_HTTP_CODES = [408, 429, 500, 502, 503, 504]
 
 def build_genai_client(api_key):
@@ -130,6 +132,35 @@ def build_genai_client(api_key):
             ),
         ),
     )
+
+def get_google_model_info(model_config, model_name):
+    return model_config.get("pricing", {}).get("google", {}).get("models", {}).get(model_name, {})
+
+def resolve_model_pricing(model_info, today=None):
+    """Return the prices in force today: the numeric base prices, overlaid by every price_changes entry already in effect."""
+    today = today or datetime.date.today()
+    # Only numeric keys are prices; label, family, access_note, thinking_levels and price_changes are metadata
+    pricing = {k: v for k, v in model_info.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+    for change in sorted(model_info.get("price_changes", []), key=lambda c: c["effective_from"]):
+        if datetime.date.fromisoformat(change["effective_from"]) <= today:
+            pricing.update({k: v for k, v in change.items() if k != "effective_from"})
+    return pricing
+
+def build_generation_config(model_name, model_config, response_schema, system_prompt, call_kind):
+    """Gemini 3.x: no sampling params, thinking_level per call kind. Gemini 2.5: keep the old temperatures."""
+    model_info = get_google_model_info(model_config, model_name)
+    config = {
+        "system_instruction": system_prompt,
+        "response_mime_type": "application/json",
+        "response_json_schema": response_schema.model_json_schema(),
+    }
+    if model_info.get("family") == "gemini-2.5":
+        config["temperature"] = 0.1 if call_kind == "suitability" else 1.0
+    else:
+        thinking_level = model_info.get("thinking_levels", {}).get(call_kind)
+        if thinking_level:
+            config["thinking_config"] = google_types.ThinkingConfig(thinking_level=thinking_level)
+    return google_types.GenerateContentConfig(**config)
 
 # Image preprocessing function from unstract_multiple_llm_text_image.py
 def preprocess_image(image, provider_list, logger, image_requirements_config):
@@ -275,7 +306,7 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
         return None
 
 # Google Gemini API call with structured output
-def call_google_llm_structured_output_text(client, model_name, system_prompt, user_prompt_parts, response_schema, logger, model_pricing_config, temperature=1.0):
+def call_google_llm_structured_output_text(client, model_name, system_prompt, user_prompt_parts, response_schema, logger, model_pricing_config, call_kind="flashcards"):
     """
     Simplified version of the Google Gemini API call function for flashcard generation
     """
@@ -320,25 +351,13 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
             logger.error(f"Error processing part {part_data}: {e}", exc_info=True)
             raise ValueError(f"Failed to process input part: {e}") from e
 
-    logger.info(f"Calling Google Model: {model_name} (Temp: {temperature}, JSON Output Schema: {response_schema.__name__})")
+    logger.info(f"Calling Google Model: {model_name} (call: {call_kind}, JSON Output Schema: {response_schema.__name__})")
     logger.debug(f"System Prompt Provided: {bool(system_prompt)}")
     logger.debug(f"Total Parts in Contents for API Call: {len(contents)}")
 
-    # Prepare Generation Config
-    generation_config_dict = {
-        "temperature": temperature,
-        "response_mime_type": "application/json",
-        "response_schema": response_schema,
-        "system_instruction": system_prompt
-    }
-
     try:
-        generation_config = google_types.GenerateContentConfig(**generation_config_dict)
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=generation_config
-        )
+        generation_config = build_generation_config(model_name, model_pricing_config, response_schema, system_prompt, call_kind)
+        response = client.models.generate_content(model=model_name, contents=contents, config=generation_config)
 
         processing_time = time.time() - start_time
 
@@ -366,7 +385,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
         # Calculate cost (robust pricing model support)
         try:
-            pricing_config = model_pricing_config.get("pricing", {}).get("google", {}).get("models", {}).get(model_name, {})
+            pricing_config = resolve_model_pricing(get_google_model_info(model_pricing_config, model_name))
             
             if not pricing_config:
                 logger.warning(f"No pricing config found for model: {model_name}")
@@ -436,6 +455,10 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
         # The SDK has already retried 408/429/5xx (see build_genai_client); report the final error.
         logger.error(f"Gemini API error ({model_name}): {e.code} {e.status} - {e.message}")
         error_text = f"Gemini API error {e.code} {e.status}: {e.message}"
+        # Preview (paid-only) and legacy (2.5, limited access) models explain the likely cause of a 4xx
+        access_note = get_google_model_info(model_pricing_config, model_name).get("access_note")
+        if access_note and 400 <= (e.code or 0) < 500:
+            error_text += f" Note: {access_note}"
         return {"data": None, "input_tokens": input_token_count, "output_tokens": output_token_count,
                 "cost": cost, "token_source": token_source, "error": error_text}
 
@@ -453,7 +476,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
             logger.warning(f"Failed to cleanup uploaded files: {cleanup_e}")
 
 # Function to generate Japanese flashcards from uploaded images
-def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-flash", prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json", custom_instructions=""):
+def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, prompt_template="Vocabulary", use_examples=True, base64_json_path="base64_example_images.json", custom_instructions=""):
     """
     For each uploaded image file:
       1) Check if the image is suitable for flashcard generation using Gemini.
@@ -628,7 +651,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                 response_schema=SuitabilityResponse,
                 logger=logger,
                 model_pricing_config=model_config,
-                temperature=0.1
+                call_kind="suitability"
             )
             
             if suitability_result["error"]:
@@ -713,7 +736,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     response_schema=FlashcardResponse,
                     logger=logger,
                     model_pricing_config=model_config,
-                    temperature=1.0
+                    call_kind="flashcards"
                 )
                 
                 if flashcard_result["error"]:
@@ -753,7 +776,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     response_schema=KanjiFlashcardResponse,
                     logger=logger,
                     model_pricing_config=model_config,
-                    temperature=1.0
+                    call_kind="flashcards"
                 )
                 
                 if flashcard_result["error"]:
@@ -796,7 +819,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model="gemini-2.0-fla
                     response_schema=GrammarFlashcardResponse,
                     logger=logger,
                     model_pricing_config=model_config,
-                    temperature=1.0
+                    call_kind="flashcards"
                 )
                 
                 if flashcard_result["error"]:
@@ -965,17 +988,25 @@ def main():
     # Load model configuration for dropdown options
     try:
         model_config = load_model_config()
-        google_models = list(model_config.get("pricing", {}).get("google", {}).get("models", {}).keys())
-    except:
-        google_models = ["gemini-2.0-flash"]  # Fallback
-    
+        google_model_info = model_config.get("pricing", {}).get("google", {})
+        google_models = list(google_model_info.get("models", {}).keys()) or [DEFAULT_MODEL]
+        default_model = google_model_info.get("default_model", DEFAULT_MODEL)
+    except (OSError, ValueError) as e:
+        st.warning(f"Could not read model_information.json ({e}); using {DEFAULT_MODEL}.")
+        google_model_info, google_models, default_model = {}, [DEFAULT_MODEL], DEFAULT_MODEL
+
     # Model selection dropdown
     selected_model = st.selectbox(
         "Select Gemini Model",
         options=google_models,
-        index=google_models.index("gemini-2.0-flash") if "gemini-2.0-flash" in google_models else 0,
-        help="Choose which Gemini model to use for flashcard generation"
+        index=google_models.index(default_model) if default_model in google_models else 0,
+        format_func=lambda m: google_model_info.get("models", {}).get(m, {}).get("label", m),
+        help="Choose which Gemini model to use for flashcard generation. Preview models need a paid (billing-enabled) key. "
+             "Legacy (Gemini 2.5) models: Google now limits these to keys that have used them before; with a new key, pick a Gemini 3 model."
     )
+    access_note = google_model_info.get("models", {}).get(selected_model, {}).get("access_note")
+    if access_note:
+        st.caption(access_note)
     
     # Prompt template selection
     prompt_template = st.selectbox(
