@@ -1,4 +1,4 @@
-# Building a Streamlit UI for code in 'Flashcard_Generation_LLM.ipynb'
+# Streamlit app: AI Japanese Flashcard Generator (photos of Japanese study pages -> Anki flashcards)
 # Importing the required libraries
 import streamlit as st
 from google import genai
@@ -20,8 +20,19 @@ from pydantic import BaseModel, Field
 from typing import List
 import time
 
-# Importing all variables from LLM_Prompts.py
-from LLM_Prompts import *
+# Prompt templates
+from LLM_Prompts import (
+    suitability_system_prompt, suitability_user_prompt,
+    flashcard_system_prompt, flashcard_system_prompt_kanji, flashcard_system_prompt_grammar,
+    flashcard_user_prompt_example_1, flashcard_answer_example_1,
+    flashcard_user_prompt_example_2, flashcard_answer_example_2,
+    flashcard_user_prompt_example_3, flashcard_answer_example_3,
+    flashcard_user_prompt_actual,
+    flashcard_user_prompt_kanji_example_1, flashcard_answer_kanji_example_1, flashcard_user_prompt_actual_kanji,
+    flashcard_user_prompt_grammar_example_1, flashcard_answer_grammar_example_1,
+    flashcard_user_prompt_grammar_example_2, flashcard_answer_grammar_example_2,
+    flashcard_user_prompt_actual_grammar,
+)
 
 # Pydantic Response Schemas
 class SuitabilityResponse(BaseModel):
@@ -210,7 +221,7 @@ def open_uploaded_image(uploaded_file, target_edge=3072):
     img.load()
     return img
 
-# Image preprocessing function from unstract_multiple_llm_text_image.py
+# Image preprocessing (resize, flatten alpha, encode as base64 JPEG)
 def preprocess_image(image, provider_list, logger, image_requirements_config):
     """
     Resizes, converts, and formats a PIL image based on the strictest requirements

@@ -623,7 +623,7 @@ N
 """
 
 flashcard_answer_grammar_example_1 = """
-"V-ます/V-ない + ながら | い-Adj + ながら | な-Adj + ながら(も) | N + ながら(も) | な-Adj/N + であり + ながら","Concessive pattern meaning ""although/though; this is the situation, but …"". Attaches to verb ます-stem (e.g., 知りながら) or negative plain form (わからないながら), to い/な adjectives, and to nouns. 「ながらも」 adds stronger contrast/emphasis. With 「でありながら」 after N/な-Adj it sounds more formal/written. Note: this entry is the contrastive ながら, not the simultaneous ""while \~ing"" use.","彼とは同じ寮に住んでいながら、ほとんど話をしたことがなかった。| 留学生たちは、難しい言葉はわからないながら、日本人のボランティアと楽しそうにおしゃべりしている。| 彼は若いながらも、立派なプロジェクトリーダーだ。| 練習試合ながら、去年の優勝チームに勝ったのは大きな自信になる。| このICレコーダーは小型でありながら、連続24時間の録音が可能だ。"
+"V-ます/V-ない + ながら | い-Adj + ながら | な-Adj + ながら(も) | N + ながら(も) | な-Adj/N + であり + ながら","Concessive pattern meaning ""although/though; this is the situation, but …"". Attaches to verb ます-stem (e.g., 知りながら) or negative plain form (わからないながら), to い/な adjectives, and to nouns. 「ながらも」 adds stronger contrast/emphasis. With 「でありながら」 after N/な-Adj it sounds more formal/written. Note: this entry is the contrastive ながら, not the simultaneous ""while \\~ing"" use.","彼とは同じ寮に住んでいながら、ほとんど話をしたことがなかった。| 留学生たちは、難しい言葉はわからないながら、日本人のボランティアと楽しそうにおしゃべりしている。| 彼は若いながらも、立派なプロジェクトリーダーだ。| 練習試合ながら、去年の優勝チームに勝ったのは大きな自信になる。| このICレコーダーは小型でありながら、連続24時間の録音が可能だ。"
 """
 
 flashcard_user_prompt_grammar_example_2 = """
