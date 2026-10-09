@@ -69,6 +69,7 @@ def test_gemini3_config_has_no_temperature_and_sets_thinking_level():
     assert c.temperature is None and c.response_schema is None
     assert c.response_mime_type == "application/json" and c.response_json_schema["type"] == "object"
     assert c.thinking_config.thinking_level == types.ThinkingLevel.MEDIUM  # medium (the 3.8 Flash default) for both calls
+    assert c.automatic_function_calling.disable is True  # no tools, so no SDK function-calling loop
     c2 = app.build_generation_config("gemini-3.8-flash", CFG, app.FlashcardResponse, "sys", "flashcards")
     assert c2.thinking_config.thinking_level == types.ThinkingLevel.MEDIUM
 
