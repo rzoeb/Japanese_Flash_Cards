@@ -179,6 +179,8 @@ def build_generation_config(model_name, model_config, response_schema, system_pr
         "system_instruction": system_prompt,
         "response_mime_type": "application/json",
         "response_json_schema": response_schema.model_json_schema(),
+        # No tools are used, so skip the SDK's automatic function-calling loop (and its warning)
+        "automatic_function_calling": google_types.AutomaticFunctionCallingConfig(disable=True),
     }
     if model_info.get("family") == "gemini-2.5":
         config["temperature"] = 0.1 if call_kind == "suitability" else 1.0
