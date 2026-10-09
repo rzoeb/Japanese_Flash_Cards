@@ -55,7 +55,7 @@ class GrammarFlashcardResponse(BaseModel):
 def load_model_config():
     """Load model configuration from model_information.json"""
     try:
-        with open("model_information.json", "r") as f:
+        with open("model_information.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         print(f"Warning: Could not load model_information.json: {e}")
@@ -117,6 +117,7 @@ def convert_flashcard_response_to_csv(flashcard_response):
 # Defaults and Gemini client helpers
 DEFAULT_MODEL = "gemini-3.8-flash"
 RETRYABLE_HTTP_CODES = [408, 429, 500, 502, 503, 504]
+LLMWHISPERER_DEFAULT_BASE_URL = "https://llmwhisperer-api.us-central.unstract.com/api/v2"
 
 def build_genai_client(api_key):
     """Gemini client with the SDK's built-in retries (the SDK does NOT retry unless retry_options is set)."""
@@ -359,19 +360,22 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
         # Check for safety blocks or empty response
         if not response.candidates:
-            finish_reason = getattr(response, 'prompt_feedback', {}).get('block_reason', 'Unknown')
+            prompt_feedback = getattr(response, 'prompt_feedback', None)
+            block_reason = getattr(prompt_feedback, 'block_reason', None)
+            finish_reason = getattr(block_reason, 'name', None) or str(block_reason or 'Unknown')
             log_msg = f"Google API response for {model_name} has no candidates. Finish Reason: {finish_reason}"
             logger.error(log_msg)
             raise ValueError(f"Google API response blocked or empty. Reason: {finish_reason}")
+        if not response.text:
+            finish = getattr(response.candidates[0], 'finish_reason', None)
+            raise ValueError(f"Empty response from Gemini (finish_reason={getattr(finish, 'name', finish)}).")
 
         # Token/Cost calculation from response
         if hasattr(response, 'usage_metadata') and response.usage_metadata:
-             input_token_count = response.usage_metadata.prompt_token_count
-             output_token_count = response.usage_metadata.candidates_token_count
-
-             # Add thinking tokens if available
-             if response.usage_metadata.thoughts_token_count is not None:
-                output_token_count += response.usage_metadata.thoughts_token_count
+             usage = response.usage_metadata
+             input_token_count = usage.prompt_token_count or 0
+             # Thinking tokens are billed at the output rate
+             output_token_count = (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
 
              token_source = "api_metadata"
              logger.info(f"Tokens from Google API metadata: Input={input_token_count}, Output={output_token_count}")
@@ -427,9 +431,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
 
         # Parse JSON response
         try:
-            result_json_str = response.text.strip()
-            parsed_data = json.loads(result_json_str)
-            response_schema.model_validate(parsed_data)
+            parsed_data = response_schema.model_validate_json(response.text).model_dump()
             
             logger.info(f"API Call Complete - Model: {model_name}, Tokens: {input_token_count} in/{output_token_count} out, Cost: ${cost:.6f}, Time: {processing_time:.1f}s")
             
@@ -499,7 +501,7 @@ def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, 
 
     # Get API keys
     gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY")
-    unstract_api_url = os.getenv("LLMWHISPERER_BASE_URL_V2")
+    unstract_api_url = os.getenv("LLMWHISPERER_BASE_URL_V2") or LLMWHISPERER_DEFAULT_BASE_URL
     unstract_api_key = os.getenv("LLMWHISPERER_API_KEY")
 
     if not gemini_api_key:
@@ -674,7 +676,9 @@ def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, 
             logger.info(f"Image #{idx}: Extracting text via OCR...")
             uploaded_file.seek(0)
             image_bytes = BytesIO(uploaded_file.read())
-            result = llm_whisper_client.whisper(stream=image_bytes, wait_for_completion=True)
+            result = llm_whisper_client.whisper(stream=image_bytes, mode="form", output_mode="layout_preserving", wait_for_completion=True)
+            if result.get("status_code") != 200 or "result_text" not in result.get("extraction", {}):
+                raise ValueError(f"LLMWhisperer did not return text (status {result.get('status_code')}: {result.get('message', 'no message')})")
             extracted_text = result["extraction"]["result_text"]
             logger.info(f"Image #{idx}: Extracted {len(extracted_text)} characters via OCR")
         except Exception as e:
@@ -879,10 +883,10 @@ def main():
         bordered_img = PIL.ImageOps.expand(img, border=5, fill='#333333')
         
         # Display the image with border
-        st.image(bordered_img, use_container_width=True)
+        st.image(bordered_img, width="stretch")
     except Exception as e:
         # Fallback to display without border if there's an error
-        st.image("Flashcard_App_Image_2.jpeg", use_container_width=True)
+        st.image("Flashcard_App_Image_2.jpeg", width="stretch")
 
     # Displaying a short description of the app
     st.markdown("""
