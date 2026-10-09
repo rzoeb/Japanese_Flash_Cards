@@ -242,7 +242,7 @@ def strip_image_metadata(data, orientation=1):
     """
     keep_orientation = orientation in range(2, 9)
     if data[:2] == b"\xff\xd8":  # JPEG
-        out, i, exif_written = bytearray(data[:2]), 2, False
+        out, i, exif_written, jfif_written = bytearray(data[:2]), 2, False, False
         while i + 1 < len(data):
             if data[i] != 0xFF or data[i + 1] == 0xFF:
                 i += 1  # stray or fill byte between segments (Pillow skips these too)
@@ -262,9 +262,13 @@ def strip_image_metadata(data, orientation=1):
                     exif_bytes = orientation_only_exif(orientation)
                     out += b"\xff\xe1" + (len(exif_bytes) + 2).to_bytes(2, "big") + exif_bytes
                     exif_written = True
-            elif 0xE0 <= marker <= 0xEF or marker == 0xFE:  # APPn and COM: keep only what affects decoding
-                if (marker == 0xE0
-                        or (marker == 0xE2 and payload.startswith(b"ICC_PROFILE\x00"))
+            elif marker == 0xE0:  # APP0: keep a bare JFIF header (no thumbnail); drop JFXX thumbnails and vendor data
+                if payload.startswith(b"JFIF\x00") and len(payload) >= 14 and not jfif_written:
+                    jfif = payload[:12] + b"\x00\x00"  # identifier, version, density units and values; thumbnail 0x0
+                    out += b"\xff\xe0" + (len(jfif) + 2).to_bytes(2, "big") + jfif
+                    jfif_written = True
+            elif 0xE1 <= marker <= 0xEF or marker == 0xFE:  # other APPn and COM: keep only what affects decoding
+                if ((marker == 0xE2 and payload.startswith(b"ICC_PROFILE\x00"))
                         or (marker == 0xEE and payload.startswith(b"Adobe"))):
                     out += segment
             else:
@@ -323,16 +327,21 @@ def preprocess_image(image, provider_list, logger, image_requirements_config):
 
         img_copy = image.copy()
 
-        # --- Handle Non-RGB/RGBA Modes (JPEG cannot store alpha, so flatten RGBA onto white) ---
-        if img_copy.mode not in ('RGB', 'RGBA') or (img_copy.mode == 'RGBA' and 'jpeg' in media_type):
+        # --- Handle Non-RGB/RGBA Modes (JPEG cannot store alpha, so flatten any transparency onto white) ---
+        # Transparency can come as an alpha band (RGBA, LA, PA) or as a palette/tRNS entry (info["transparency"])
+        has_alpha = 'A' in img_copy.getbands() or 'transparency' in img_copy.info
+        if img_copy.mode not in ('RGB', 'RGBA') or (has_alpha and 'jpeg' in media_type):
             logger.warning(f"Input image mode is '{img_copy.mode}'. Converting to 'RGB' for compatibility.")
             print(f"WARN: Converting image mode '{img_copy.mode}' to 'RGB'.")
             try:
-                if img_copy.mode == 'RGBA':
-                    background = PIL.Image.new('RGB', img_copy.size, (255, 255, 255))
-                    background.paste(img_copy, mask=img_copy.split()[3])
-                    background.info = img_copy.info  # keep the EXIF orientation for the transpose below
-                    img_copy = background
+                if has_alpha:
+                    converted = img_copy.convert('RGBA')
+                    if 'jpeg' in media_type:
+                        background = PIL.Image.new('RGB', converted.size, (255, 255, 255))
+                        background.paste(converted, mask=converted.getchannel('A'))
+                        converted = background
+                    converted.info = img_copy.info  # keep the EXIF orientation for the transpose below
+                    img_copy = converted
                 else:
                     img_copy = img_copy.convert('RGB')
             except Exception as convert_e:
@@ -524,7 +533,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
                 
                 # Check for tiered pricing models first (200k threshold)
                 if "input_less_than_200k_prompt" in pricing_config:
-                    if input_token_count < 200_000:
+                    if input_token_count <= 200_000:  # lower tier applies to prompts up to and including 200k tokens
                         input_cost_per_m = pricing_config.get("input_less_than_200k_prompt", 0)
                         output_cost_per_m = pricing_config.get("output_less_than_200k_prompt", 0)
                     else:
@@ -534,7 +543,7 @@ def call_google_llm_structured_output_text(client, model_name, system_prompt, us
                 
                 # Check for tiered pricing models (128k threshold)
                 elif "input_less_than_128k_prompt" in pricing_config:
-                    if input_token_count < 128_000:
+                    if input_token_count <= 128_000:
                         input_cost_per_m = pricing_config.get("input_less_than_128k_prompt", 0)
                         output_cost_per_m = pricing_config.get("output_less_than_128k_prompt", 0)
                     else:
@@ -806,9 +815,10 @@ def generate_japanese_flashcards(uploaded_images, selected_model=DEFAULT_MODEL, 
             uploaded_file.seek(0)
             image_bytes = BytesIO(strip_image_metadata(uploaded_file.read(), pil_image.getexif().get(0x0112, 1)))  # same image data, no EXIF/GPS
             result = llm_whisper_client.whisper(stream=image_bytes, mode="form", output_mode="layout_preserving", wait_for_completion=True)
-            if result.get("status_code") != 200 or "result_text" not in result.get("extraction", {}):
+            extracted_text = (result.get("extraction") or {}).get("result_text") or ""
+            if result.get("status_code") != 200 or not extracted_text.strip():
+                # No OCR text means nothing to cross-check the image against, so skip the page rather than guess
                 raise ValueError(f"LLMWhisperer did not return text (status {result.get('status_code')}: {result.get('message', 'no message')})")
-            extracted_text = result["extraction"]["result_text"]
             logger.info(f"Image #{idx}: Extracted {len(extracted_text)} characters via OCR")
         except Exception as e:
             msg = f"Image #{idx}: OCR extraction error - {e}"

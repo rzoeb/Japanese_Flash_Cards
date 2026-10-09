@@ -117,6 +117,12 @@ def test_inline_images_no_files_api_and_cost_includes_thoughts():
                0.2 * app.resolve_model_pricing(app.get_google_model_info(CFG, "gemini-3.8-flash"))["output"]
     assert abs(r["cost"] - expected) < 1e-9
 
+def test_200k_prompt_is_billed_at_the_lower_tier():
+    # Pricing: "$2.00, prompts <= 200k tokens"; exactly 200,000 must use the lower tier
+    client = fake_client(lambda kw: ok_response({"is_suitable": "Yes", "reason": "ok"}, prompt=200_000, cand=0, thoughts=0))
+    r = app.call_google_llm_structured_output_text(client, "gemini-3.1-pro-preview", "sys", ["p"], app.SuitabilityResponse, LOG, CFG)
+    assert abs(r["cost"] - 0.2 * 2.0) < 1e-9
+
 def test_blocked_prompt_reports_reason():
     blocked = types.GenerateContentResponse(candidates=[], prompt_feedback=types.GenerateContentResponsePromptFeedback(block_reason="SAFETY"))
     r = app.call_google_llm_structured_output_text(fake_client(lambda kw: blocked), "gemini-3.8-flash", "sys", ["p"],
@@ -160,6 +166,20 @@ def test_preprocess_outputs_small_jpeg_and_flattens_alpha():
     assert out["media_type"] == "image/jpeg"
     im = Image.open(io.BytesIO(base64.b64decode(out["data"])))
     assert im.format == "JPEG" and max(im.size) <= 3072 and len(base64.b64decode(out["data"])) < 4 * 1024 * 1024
+
+def _transparent_la():
+    img = Image.new("LA", (200, 100), (0, 0)); img.paste((0, 255), (20, 40, 180, 60))  # black bar on a transparent background
+    return img
+
+def _transparent_palette():
+    img = Image.new("P", (200, 100), 0); img.putpalette([0, 0, 0] * 256); img.info["transparency"] = 0
+    return img
+
+@pytest.mark.parametrize("make", [_transparent_la, _transparent_palette], ids=["LA", "P+transparency"])
+def test_transparent_pngs_flatten_onto_white(make):
+    out = app.preprocess_image(make(), ["google"], LOG, CFG["image_requirements"])
+    im = Image.open(io.BytesIO(base64.b64decode(out["data"]))).convert("RGB")
+    assert im.getpixel((5, 5)) == (255, 255, 255)  # transparent background becomes white, not black
 
 
 # ---------- upload hardening ----------
@@ -244,6 +264,20 @@ def test_strip_metadata_keeps_image_data_and_orientation():
     assert dict(exif) == {0x0112: 6} and not exif.get_ifd(0x8825)  # orientation only, no GPS
     assert b"PRIVATE" not in out and "xmp" not in b.info and "comment" not in b.info
 
+def test_strip_metadata_sanitises_app0():
+    buf = io.BytesIO(); Image.effect_noise((64, 48), 64).convert("RGB").save(buf, "JPEG"); src = buf.getvalue()
+    thumb = bytes([200, 10, 10]) * 4  # 2x2 RGB thumbnail inside the JFIF header
+    jfif = b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01" + bytes([2, 2]) + thumb
+    vendor = b"AVI1\x00PRIVATE-VENDOR-DATA"
+    start = src.index(b"\xff\xe0"); end = start + 2 + int.from_bytes(src[start + 2:start + 4], "big")
+    crafted = (src[:start] + b"\xff\xe0" + (len(jfif) + 2).to_bytes(2, "big") + jfif
+               + b"\xff\xe0" + (len(vendor) + 2).to_bytes(2, "big") + vendor + src[end:])
+    out = app.strip_image_metadata(crafted)
+    assert thumb not in out and b"PRIVATE" not in out
+    assert out.count(b"JFIF\x00") == 1 and out[out.index(b"JFIF\x00") + 12:out.index(b"JFIF\x00") + 14] == b"\x00\x00"  # no thumbnail
+    assert scan_data(out) == scan_data(crafted)
+    assert Image.open(io.BytesIO(out)).tobytes() == Image.open(io.BytesIO(crafted)).tobytes()
+
 def test_strip_metadata_png_keeps_pixels():
     from PIL import PngImagePlugin
     info = PngImagePlugin.PngInfo(); info.add_text("Comment", "PRIVATE")
@@ -297,3 +331,22 @@ def test_pipeline_end_to_end_with_fakes(monkeypatch):
     sent = ocr_streams[0]
     assert b"PRIVATE" not in sent and not Image.open(io.BytesIO(sent)).getexif().get_ifd(0x8825)
     assert scan_data(sent) == scan_data(photo)
+
+def test_empty_ocr_text_skips_the_page(monkeypatch):
+    client = fake_client(lambda kw: ok_response({"is_suitable": "Yes", "reason": "ok"}))
+    monkeypatch.setattr(app, "build_genai_client", lambda key: client)
+    class EmptyWhisper:
+        def __init__(self, **kw): pass
+        def whisper(self, **kw): return {"status_code": 200, "message": "done", "extraction": {"result_text": "  \n"}}
+    monkeypatch.setattr(app, "LLMWhispererClientV2", EmptyWhisper)
+    buf = FakeUpload(); Image.new("RGB", (800, 1200), "white").save(buf, "JPEG"); buf.seek(0)
+    kwargs = dict(uploaded_images=[buf], prompt_template="Vocabulary", use_examples=False)
+    import inspect
+    if "gemini_api_key" in inspect.signature(app.generate_japanese_flashcards).parameters:  # app_public
+        kwargs.update(gemini_api_key="FAKE_GEMINI_KEY_123", llmwhisperer_api_key="FAKE_LLMW_KEY_123")
+    else:  # main reads keys from env/secrets
+        monkeypatch.setenv("GOOGLE_GEMINI_API_KEY", "FAKE_GEMINI_KEY_123"); monkeypatch.setenv("LLMWHISPERER_API_KEY", "FAKE_LLMW_KEY_123")
+        monkeypatch.setenv("IS_LOCAL_DEV", "true")
+    cards, notes, stats = app.generate_japanese_flashcards(**kwargs)
+    assert cards == "" and any("did not return text" in n for n in notes), notes
+    assert len(client.models.calls) == 1  # suitability only; no flashcard call without OCR text
