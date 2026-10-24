@@ -4,6 +4,8 @@ An advanced tool that automates the creation of Japanese language Anki flashcard
 
 **Try it:** https://japaneseflashcardspublic.streamlit.app/ (bring your own Gemini and LLMWhisperer keys)
 
+**Project write-up:** https://www.rounakzoeb.com/work/japanese-flashcard-generator
+
 ## Overview
 
 This application extracts Japanese vocabulary and Kanji from textbook images and generates properly formatted flashcards that can be imported into Anki or similar spaced repetition systems. It combines OCR technology with Google's Gemini language models to extract, verify, and format content into ready-to-import flashcards with advanced AI-powered processing.
